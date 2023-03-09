@@ -4,14 +4,14 @@ Chasing Targets Gym
 
 |version| |python| |license| |codestyle|
 
-.. |version| image:: https://img.shields.io/pypi/v/chasing_targets_gym
-    :target: https://pypi.org/project/chasing_targets_gym/
+.. |version| image:: https://img.shields.io/pypi/v/chasing-targets-gym
+    :target: https://pypi.org/project/chasing-targets-gym/
     :alt: PyPI - Package Version
-.. |python| image:: https://img.shields.io/pypi/pyversions/chasing_targets_gym
-    :target: https://pypi.org/project/chasing_targets_gym/
+.. |python| image:: https://img.shields.io/pypi/pyversions/chasing-targets-gym
+    :target: https://pypi.org/project/chasing-targets-gym/
     :alt: PyPI - Python Version
-.. |license| image:: https://img.shields.io/pypi/l/chasing_targets_gym
-    :target: https://github.com/5had3z/chasing_targets_gym/blob/main/LICENSE
+.. |license| image:: https://img.shields.io/pypi/l/chasing-targets-gym
+    :target: https://github.com/5had3z/chasing-targets-gym/blob/main/LICENSE
     :alt: PyPI - License
 .. |codestyle| image:: https://img.shields.io/badge/code%20style-black-000000.svg
     :target: https://github.com/psf/black
