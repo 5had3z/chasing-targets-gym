@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.dynamic]
+version = {attr = "chasing_targets_gym.__version__"}
+dependencies = {file = ["requirements.txt"]}
+
+[project]
+name = "chasing_targets_gym"
+authors = [
+  { name="Bryce Ferenczi", email="frenzi@hotmail.com.au" },
+]
+dynamic = ["version", "dependencies"]
+description = "Simple gym environment for multiple agents to chase multiple (dumb) targets"
+readme = "README.rst"
+license = { file="LICENSE" }
+requires-python = ">=3.10"
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Natural Language :: English"
+]
+
+[project.urls]
+"Homepage" = "https://github.com/5had3z/chasing-targets-gym"
+"Bug Tracker" = "https://github.com/5had3z/chasing-targets-gym/issues"
