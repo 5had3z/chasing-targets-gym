@@ -133,11 +133,11 @@ class Planner:
 
         for r_idx in range(n_robot):
             notr_idx = [i for i in range(0, n_robot) if i != r_idx]
-            tgt_future = obs["future_target"][obs["robot_target_idx"][r_idx]]
+            tgt_future = obs["future_target"][obs["robot_target_idx"][r_idx], :2]
             action = self.chooseAction(
                 obs["vL"][r_idx],
                 obs["vR"][r_idx],
-                obs["current_robot"][r_idx],
+                obs["current_robot"][r_idx, :3],
                 tgt_future,
                 obs["future_robot"][notr_idx, :2],
             )

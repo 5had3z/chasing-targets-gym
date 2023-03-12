@@ -122,16 +122,16 @@ class RobotChasingTargetEnv(gym.Env):
                     low=-np.inf, high=np.inf, shape=(n_robots,), dtype=np.float64
                 ),
                 "current_robot": spaces.Box(
-                    low=-np.inf, high=np.inf, shape=(n_robots, 3), dtype=np.float64
+                    low=-np.inf, high=np.inf, shape=(n_robots, 6), dtype=np.float64
                 ),
                 "future_robot": spaces.Box(
-                    low=-np.inf, high=np.inf, shape=(n_robots, 3), dtype=np.float64
+                    low=-np.inf, high=np.inf, shape=(n_robots, 6), dtype=np.float64
                 ),
                 "current_target": spaces.Box(
-                    low=-np.inf, high=np.inf, shape=(n_targets, 2), dtype=np.float64
+                    low=-np.inf, high=np.inf, shape=(n_targets, 4), dtype=np.float64
                 ),
                 "future_target": spaces.Box(
-                    low=-np.inf, high=np.inf, shape=(n_targets, 2), dtype=np.float64
+                    low=-np.inf, high=np.inf, shape=(n_targets, 4), dtype=np.float64
                 ),
                 "robot_target_idx": spaces.Box(
                     low=0, high=n_targets, shape=(n_robots,), dtype=np.int64
@@ -141,6 +141,7 @@ class RobotChasingTargetEnv(gym.Env):
 
         self._info = {
             "n_robots": self.n_robots,
+            "n_targets": self.n_targets,
             "max_acceleration": self.max_acceleration,
             "max_velocity": self.max_velocity,
             "robot_radius": self.robot_radius,
@@ -178,10 +179,10 @@ class RobotChasingTargetEnv(gym.Env):
         return {
             "vR": self.robots.vR,
             "vL": self.robots.vL,
-            "current_robot": self.robots.state[:, :3],
-            "future_robot": self.robots.forecast(self.tau)[:, :3],
-            "current_target": self.targets[:, :2],
-            "future_target": targets[:, :2],
+            "current_robot": self.robots.state[:, :6],
+            "future_robot": self.robots.forecast(self.tau),
+            "current_target": self.targets,
+            "future_target": targets,
             "robot_target_idx": self.target_idxs,
         }
 
