@@ -4,14 +4,16 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.dynamic]
 version = {attr = "chasing_targets_gym.__version__"}
-dependencies = {file = ["requirements.txt"]}
+
+[tool.setuptools.packages.find]
+where = ["src"]
 
 [project]
 name = "chasing_targets_gym"
 authors = [
-  { name="Bryce Ferenczi", email="frenzi@hotmail.com.au" },
+    { name="Bryce Ferenczi", email="frenzi@hotmail.com.au" },
 ]
-dynamic = ["version", "dependencies"]
+dynamic = ["version"]
 description = "Simple gym environment for multiple agents to chase multiple (dumb) targets"
 readme = "README.rst"
 license = { file="LICENSE" }
@@ -24,6 +26,11 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Natural Language :: English"
+]
+dependencies = [
+    "numpy",
+    "gymnasium",
+    "pygame"
 ]
 
 [project.urls]
