@@ -129,14 +129,14 @@ class Planner:
         Determine the best action depending on the state observation
         """
         n_robot = obs["vL"].shape[0]
-        actions = {k: np.empty(n_robot, dtype=np.float64) for k in ["vL", "vR"]}
+        actions = {k: np.empty((n_robot, 1), dtype=np.float64) for k in ["vL", "vR"]}
 
         for r_idx in range(n_robot):
             notr_idx = [i for i in range(0, n_robot) if i != r_idx]
             tgt_future = obs["future_target"][obs["robot_target_idx"][r_idx], :2]
             action = self.chooseAction(
-                obs["vL"][r_idx],
-                obs["vR"][r_idx],
+                obs["vL"][r_idx, 0],
+                obs["vR"][r_idx, 0],
                 obs["current_robot"][r_idx, :3],
                 tgt_future,
                 obs["future_robot"][notr_idx, :2],

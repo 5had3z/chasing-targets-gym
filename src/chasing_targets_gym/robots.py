@@ -81,8 +81,8 @@ class Robots:
 
         # Update intended control inputs
         max_dv = self.accel_limit * self.dt
-        self.vL = np.clip(action["vL"], self.vL - max_dv, self.vL + max_dv)
-        self.vR = np.clip(action["vR"], self.vR - max_dv, self.vR + max_dv)
+        self.vL = np.clip(action["vL"][:, 0], self.vL - max_dv, self.vL + max_dv)
+        self.vR = np.clip(action["vR"][:, 0], self.vR - max_dv, self.vR + max_dv)
 
         # Calculate rate of change
         dxdyxt = self._calculate_velocity()

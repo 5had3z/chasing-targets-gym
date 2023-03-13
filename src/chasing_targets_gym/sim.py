@@ -64,8 +64,8 @@ class RobotChasingTargetEnv(gym.Env):
                 dimensions, default value is (-4., -3., 4., 3.)
         """
         self.robots = Robots(n_robots, robot_radius, dt, max_acceleration)
-        self.targets = np.empty((n_targets, 4), dtype=float)
-        self.target_idxs = np.empty(n_robots, dtype=int)
+        self.targets = np.empty((n_targets, 4), dtype=np.float64)
+        self.target_idxs = np.empty(n_robots, dtype=np.int64)
         self.dt = dt
         self.steps_ahead_to_plan = steps_ahead_to_plan
         self.reset_when_target_reached = reset_when_target_reached
@@ -98,44 +98,56 @@ class RobotChasingTargetEnv(gym.Env):
 
         self.action_space = spaces.Dict(
             {
-                "vR": spaces.Box(
-                    low=-self.max_velocity,
-                    high=self.max_velocity,
-                    shape=(n_robots,),
-                    dtype=np.float64,
+                "vR": spaces.Sequence(
+                    spaces.Box(
+                        low=-self.max_velocity,
+                        high=self.max_velocity,
+                        shape=(1,),
+                        dtype=np.float64,
+                    )
                 ),
-                "vL": spaces.Box(
-                    low=-self.max_velocity,
-                    high=self.max_velocity,
-                    shape=(n_robots,),
-                    dtype=np.float64,
+                "vL": spaces.Sequence(
+                    spaces.Box(
+                        low=-self.max_velocity,
+                        high=self.max_velocity,
+                        shape=(1,),
+                        dtype=np.float64,
+                    )
                 ),
             }
         )
 
         self.observation_space = spaces.Dict(
             {
-                "vR": spaces.Box(
-                    low=-np.inf, high=np.inf, shape=(n_robots,), dtype=np.float64
+                "vR": spaces.Sequence(
+                    spaces.Box(
+                        low=-self.max_velocity,
+                        high=self.max_velocity,
+                        shape=(1,),
+                        dtype=np.float64,
+                    )
                 ),
-                "vL": spaces.Box(
-                    low=-np.inf, high=np.inf, shape=(n_robots,), dtype=np.float64
+                "vL": spaces.Sequence(
+                    spaces.Box(
+                        low=-self.max_velocity,
+                        high=self.max_velocity,
+                        shape=(1,),
+                        dtype=np.float64,
+                    )
                 ),
-                "current_robot": spaces.Box(
-                    low=-np.inf, high=np.inf, shape=(n_robots, 6), dtype=np.float64
+                "current_robot": spaces.Sequence(
+                    spaces.Box(low=-np.inf, high=np.inf, shape=(6,), dtype=np.float64)
                 ),
-                "future_robot": spaces.Box(
-                    low=-np.inf, high=np.inf, shape=(n_robots, 6), dtype=np.float64
+                "future_robot": spaces.Sequence(
+                    spaces.Box(low=-np.inf, high=np.inf, shape=(6,), dtype=np.float64)
                 ),
-                "current_target": spaces.Box(
-                    low=-np.inf, high=np.inf, shape=(n_targets, 4), dtype=np.float64
+                "current_target": spaces.Sequence(
+                    spaces.Box(low=-np.inf, high=np.inf, shape=(4,), dtype=np.float64)
                 ),
-                "future_target": spaces.Box(
-                    low=-np.inf, high=np.inf, shape=(n_targets, 4), dtype=np.float64
+                "future_target": spaces.Sequence(
+                    spaces.Box(low=-np.inf, high=np.inf, shape=(4,), dtype=np.float64)
                 ),
-                "robot_target_idx": spaces.Box(
-                    low=0, high=n_targets, shape=(n_robots,), dtype=np.int64
-                ),
+                "robot_target_idx": spaces.Sequence(spaces.Discrete(n=n_targets)),
             }
         )
 
@@ -177,8 +189,8 @@ class RobotChasingTargetEnv(gym.Env):
         for _ in range(self.steps_ahead_to_plan):
             self._move_targets(targets)
         return {
-            "vR": self.robots.vR,
-            "vL": self.robots.vL,
+            "vR": self.robots.vR[..., None],
+            "vL": self.robots.vL[..., None],
             "current_robot": self.robots.state[:, :6],
             "future_robot": self.robots.forecast(self.tau),
             "current_target": self.targets,

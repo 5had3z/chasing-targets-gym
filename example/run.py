@@ -33,7 +33,7 @@ def pure_pursuit(obs: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
         actions.append(update_step(robot[None], obs["future_target"][tgtid]))
     action = {}
     for key_ in actions[0]:
-        action[key_] = np.concatenate([a[key_] for a in actions], axis=0)
+        action[key_] = np.stack([a[key_] for a in actions], axis=0)
     return action
 
 
