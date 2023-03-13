@@ -17,7 +17,7 @@ def test_init():
         max_episode_steps=30,
     )
     env.reset()
-    env.step({"vL": np.full(10, 0.0), "vR": np.full(10, 0.0)})
+    env.step({"vL": np.full((10, 1), 0.0), "vR": np.full((10, 1), 0.0)})
     env.close()
 
 
@@ -39,7 +39,7 @@ def test_video_writer(tmp_path: Path):
     done = False
     while not done:
         _, _, terminated, truncated, _ = env.step(
-            {"vL": np.full(10, 0.0), "vR": np.full(10, 0.0)}
+            {"vL": np.full((10, 1), 0.0), "vR": np.full((10, 1), 0.0)}
         )
         env.render()
         done = terminated or truncated
