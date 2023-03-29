@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import pytest
 from gymnasium import make
 import numpy as np
 import chasing_targets_gym
@@ -18,6 +19,32 @@ def test_init():
     )
     env.reset()
     env.step({"vL": np.full((10, 1), 0.0), "vR": np.full((10, 1), 0.0)})
+    env.close()
+
+
+def test_limits():
+    """Test to ensure that sim catches invalid actions"""
+    env = make(
+        "ChasingTargets-v0",
+        n_robots=10,
+        n_targets=3,
+        robot_radius=0.1,
+        max_velocity=0.5,
+        barrier_velocity_range=0.5,
+        max_episode_steps=30,
+    )
+    env.reset()
+    # Within limits
+    env.step({"vL": np.full((10, 1), 0.5), "vR": np.full((10, 1), -0.5)})
+
+    # Too big
+    with pytest.raises(AssertionError):
+        env.step({"vL": np.full((10, 1), 0.6), "vR": np.full((10, 1), 0.0)})
+
+    # Too small
+    with pytest.raises(AssertionError):
+        env.step({"vL": np.full((10, 1), 0.0), "vR": np.full((10, 1), -0.6)})
+
     env.close()
 
 

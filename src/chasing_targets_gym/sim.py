@@ -102,17 +102,17 @@ class RobotChasingTargetEnv(gym.Env):
                     spaces.Box(
                         low=-self.max_velocity,
                         high=self.max_velocity,
-                        shape=(1,),
                         dtype=np.float64,
-                    )
+                    ),
+                    stack=True,
                 ),
                 "vL": spaces.Sequence(
                     spaces.Box(
                         low=-self.max_velocity,
                         high=self.max_velocity,
-                        shape=(1,),
                         dtype=np.float64,
-                    )
+                    ),
+                    stack=True,
                 ),
             }
         )
@@ -123,31 +123,37 @@ class RobotChasingTargetEnv(gym.Env):
                     spaces.Box(
                         low=-self.max_velocity,
                         high=self.max_velocity,
-                        shape=(1,),
                         dtype=np.float64,
-                    )
+                    ),
+                    stack=True,
                 ),
                 "vL": spaces.Sequence(
                     spaces.Box(
                         low=-self.max_velocity,
                         high=self.max_velocity,
-                        shape=(1,),
                         dtype=np.float64,
-                    )
+                    ),
+                    stack=True,
                 ),
                 "current_robot": spaces.Sequence(
-                    spaces.Box(low=-np.inf, high=np.inf, shape=(6,), dtype=np.float64)
+                    spaces.Box(low=-np.inf, high=np.inf, shape=(6,), dtype=np.float64),
+                    stack=True,
                 ),
                 "future_robot": spaces.Sequence(
-                    spaces.Box(low=-np.inf, high=np.inf, shape=(6,), dtype=np.float64)
+                    spaces.Box(low=-np.inf, high=np.inf, shape=(6,), dtype=np.float64),
+                    stack=True,
                 ),
                 "current_target": spaces.Sequence(
-                    spaces.Box(low=-np.inf, high=np.inf, shape=(4,), dtype=np.float64)
+                    spaces.Box(low=-np.inf, high=np.inf, shape=(4,), dtype=np.float64),
+                    stack=True,
                 ),
                 "future_target": spaces.Sequence(
-                    spaces.Box(low=-np.inf, high=np.inf, shape=(4,), dtype=np.float64)
+                    spaces.Box(low=-np.inf, high=np.inf, shape=(4,), dtype=np.float64),
+                    stack=True,
                 ),
-                "robot_target_idx": spaces.Sequence(spaces.Discrete(n=n_targets)),
+                "robot_target_idx": spaces.Sequence(
+                    spaces.Discrete(n=n_targets), stack=True
+                ),
             }
         )
 
