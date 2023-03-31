@@ -1,5 +1,7 @@
 from pathlib import Path
 from typing import Dict
+from cProfile import Profile
+import pstats
 
 import chasing_targets_gym
 from gymnasium import make
@@ -57,12 +59,22 @@ def run_env():
     planner = Planner(ROBOT_RADIUS, info["dt"], max_velocity=max_vel)
     # planner = pure_pursuit
 
+    enable_profile = False
+    if enable_profile:
+        prof = Profile()
+        prof.enable()
+
     done = False
     while not done:
         action = planner(observation)
         observation, _, terminated, truncated, info = env.step(action)
         env.render()
         done = terminated or truncated
+
+    if enable_profile:
+        prof.disable()
+        stats = pstats.Stats(prof).strip_dirs().sort_stats("cumtime")
+        stats.print_stats(10)
 
     env.close()
 

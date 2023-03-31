@@ -1,8 +1,15 @@
-import math
-import itertools
-from typing import Dict, Any
+from typing import Dict
 
 import numpy as np
+
+
+def cartesian_product(*arrays):
+    """Cartesian product of numpy arrays"""
+    la = len(arrays)
+    arr = np.empty([len(a) for a in arrays] + [la], dtype=np.result_type(*arrays))
+    for i, a in enumerate(np.ix_(*arrays)):
+        arr[..., i] = a
+    return arr.reshape(-1, la)
 
 
 class Planner:
@@ -17,48 +24,44 @@ class Planner:
     max_acceleration = 0.4
 
     def __init__(self, agent_radius: float, dt: float, max_velocity: float) -> None:
-        self.agent_radius = agent_radius
+        self.radius = agent_radius
         self.safe_dist = agent_radius
         self.max_velocity = max_velocity
         self.dt = dt
         self.tau = dt * self.plan_ahead_steps
 
-    def predictPosition(self, vL: float, vR: float, robot: np.ndarray, deltat: float):
+    @property
+    def width(self) -> float:
+        return self.radius * 2.0
+
+    def predictPosition(self, vL: np.ndarray, vR: np.ndarray, robot: np.ndarray):
         """
         Function to predict new robot position based on current pose and velocity controls
-        Uses time deltat in future
         Returns xnew, ynew, thetanew
         Also returns path. This is just used for graphics, and returns some complicated stuff
         used to draw the possible paths during planning. Don't worry about the details of that.
         """
-        x, y, theta = robot
-        W = 2 * self.agent_radius
+        _, _, theta = robot
+        # First cover general motion case
+        R = self.radius * (vR + vL) / (vR - vL + np.finfo(vR.dtype).eps)
+        dt = (vR - vL) / self.width
+        dx = R * (np.sin(dt + theta) - np.sin(theta))
+        dy = -R * (np.cos(dt + theta) - np.cos(theta))
 
-        if np.isclose(vL, vR):  # Straight line motion
-            xnew = x + vL * deltat * math.cos(theta)
-            ynew = y + vL * deltat * math.sin(theta)
-            thetanew = theta
-        elif np.isclose(vL, -vR):  # Pure rotation motion
-            xnew = x
-            ynew = y
-            thetanew = theta + ((vR - vL) * deltat / W)
-        else:  # Rotation and arc angle of general circular motion
-            R = W / 2.0 * (vR + vL) / (vR - vL)
-            deltatheta = (vR - vL) * deltat / W
-            xnew = x + R * (math.sin(deltatheta + theta) - math.sin(theta))
-            ynew = y - R * (math.cos(deltatheta + theta) - math.cos(theta))
-            thetanew = theta + deltatheta
+        # Then cover straight motion case
+        mask = np.isclose(vL, vR)
+        dx[mask] = (vL * np.cos(theta))[mask]
+        dy[mask] = (vL * np.sin(theta))[mask]
 
-        return np.array([xnew, ynew, thetanew])
+        return robot + self.tau * np.stack([dx, dy, dt], axis=-1)
 
     def calculateClosestObstacleDistance(self, robot, obstacle):
         """
         Function to calculate the closest obstacle at
         a position (x, y). Used during planning.
         """
-        return (
-            np.min(np.linalg.norm(robot - obstacle, 2, axis=1)) - 2 * self.agent_radius
-        )
+        pairwise_distance = np.linalg.norm(robot[:, None] - obstacle[None], 2, axis=-1)
+        return np.min(pairwise_distance, axis=1) - self.width
 
     def chooseAction(
         self,
@@ -74,53 +77,45 @@ class Planner:
         component for closeness to target, and a negative component
         for closeness to obstacles, for each of a choice of possible actions
         """
-        bestBenefit = -100000
-        vLchosen = vL
-        vRchosen = vR
-
         # Range of possible motions: each of vL and vR could go up or down a bit
         dv = self.max_acceleration * self.dt
-        for vLpossible, vRpossible in itertools.product(
-            (vL - dv, vL, vL + dv), (vR - dv * self.dt, vR, vR + dv)
-        ):
-            # We can only choose an action if it's within velocity limits
-            if not (
-                (-self.max_velocity <= vLpossible <= self.max_velocity)
-                and (-self.max_velocity <= vRpossible <= self.max_velocity)
-            ):
-                continue
+        actions = cartesian_product(
+            np.array((vL - dv, vL, vL + dv)), np.array((vR - dv, vR, vR + dv))
+        )
 
-            # Predict new position in TAU seconds
-            new_robot_pos = self.predictPosition(
-                vLpossible, vRpossible, robot, self.tau
-            )
+        # Predict new position in TAU seconds
+        new_robot_pos = self.predictPosition(actions[:, 0], actions[:, 1], robot)
 
-            # What is the distance to the closest obstacle from this possible position?
-            distanceToObstacle = self.calculateClosestObstacleDistance(
-                new_robot_pos[:-1], obstacle
-            )
+        # What is the distance to the closest obstacle from this possible position?
+        distanceToObstacle = self.calculateClosestObstacleDistance(
+            new_robot_pos[:, :2], obstacle
+        )
 
-            # Calculate how much close we've moved to target location
-            previousTargetDistance = np.linalg.norm(robot[:-1] - target, 2)
-            newTargetDistance = np.linalg.norm(new_robot_pos[:-1] - target, 2)
-            distanceForward = previousTargetDistance - newTargetDistance
+        # Calculate how much close we've moved to target location
+        previousTargetDistance = np.linalg.norm(robot[:2] - target, 2)
+        newTargetDistance = np.linalg.norm(new_robot_pos[:, :2] - target, 2, axis=1)
+        distanceForward = previousTargetDistance - newTargetDistance
 
-            # Positive benefit
-            distanceBenefit = self.forward_weight * distanceForward
+        # Positive benefit
+        distanceBenefit = self.forward_weight * distanceForward
 
-            # Negative cost: once we are less than SAFEDIST from collision, linearly increasing cost
-            obstacleCost = (
-                self.obstacle_weight
-                * (self.safe_dist - distanceToObstacle)
-                * (distanceToObstacle < self.safe_dist)
-            )
+        # Negative cost: once we are less than SAFEDIST from collision, linearly increasing cost
+        obstacleCost = (
+            self.obstacle_weight
+            * (self.safe_dist - distanceToObstacle)
+            * (distanceToObstacle < self.safe_dist)
+        )
 
-            # Total benefit function to optimise
-            benefit = distanceBenefit - obstacleCost
-            if benefit > bestBenefit:
-                vLchosen = vLpossible
-                vRchosen = vRpossible
-                bestBenefit = benefit
+        # Total benefit function to optimise
+        benefit = distanceBenefit - obstacleCost
+
+        # Invalid actions are -inf cost
+        mask = np.abs(actions[:, 0]) > self.max_velocity
+        mask |= np.abs(actions[:, 1]) > self.max_velocity
+        benefit[mask] = -np.finfo(benefit.dtype).max
+
+        best_idx = np.argmax(benefit)
+        vLchosen, vRchosen = actions[best_idx]
 
         return {"vL": vLchosen, "vR": vRchosen}
 

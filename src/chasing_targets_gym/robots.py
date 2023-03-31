@@ -101,7 +101,9 @@ class Robots:
 
     def _calculate_velocity(self) -> np.ndarray:
         # First cover general motion case
-        R = self.radius * (self.vR + self.vL) / (self.vR - self.vL + 1e-12)
+        R = (self.radius * (self.vR + self.vL)) / (
+            self.vR - self.vL + np.finfo(self.vR.dtype).eps
+        )
         dt = (self.vR - self.vL) / self.width
         dx = R * (np.sin(dt + self.theta) - np.sin(self.theta))
         dy = -R * (np.cos(dt + self.theta) - np.cos(self.theta))
@@ -116,9 +118,9 @@ class Robots:
     def _prepare_trajectory_render(
         self, x: float, y: float, theta: float, vL: float, vR: float
     ):
-        if round(vL, 3) == round(vR, 3):
+        if np.allclose(vL, vR, atol=1e-3):
             return vL * self.dt
-        elif round(vL, 3) == -round(vR, 3):
+        elif np.allclose(vL, -vR, atol=1e-3):
             return 0.0
         else:
             R = self.width / 2.0 * (vR + vL) / (vR - vL)
