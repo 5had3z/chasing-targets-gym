@@ -1,11 +1,12 @@
 from pathlib import Path
 from typing import Dict
-from cProfile import Profile
-import pstats
+
 
 import chasing_targets_gym
-from gymnasium import make
+from gymnasium import make, Env
+import typer
 import numpy as np
+from typing_extensions import Annotated
 
 try:
     from .planner import Planner
@@ -39,45 +40,56 @@ def pure_pursuit(obs: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
     return action
 
 
-def run_env():
-    """Runs simulation of target chasers"""
-    max_vel = 0.5
-    env = make(
-        "ChasingTargets-v0",
-        render_mode="human",
-        n_robots=10,
-        n_targets=3,
-        robot_radius=ROBOT_RADIUS,
-        max_velocity=max_vel,
-        barrier_velocity_range=max_vel,
-        max_episode_steps=300,
-        # recording_path=Path.cwd() / "test.mkv",
-    )
-
+def run_sim(env: Env, planner):
     observation, info = env.reset(seed=2)
-
-    planner = Planner(ROBOT_RADIUS, info["dt"], max_velocity=max_vel)
-    # planner = pure_pursuit
-
-    enable_profile = False
-    if enable_profile:
-        prof = Profile()
-        prof.enable()
 
     done = False
     while not done:
         action = planner(observation)
         observation, _, terminated, truncated, info = env.step(action)
-        env.render()
+        if env.render_mode == "human":
+            env.render()
         done = terminated or truncated
-
-    if enable_profile:
-        prof.disable()
-        stats = pstats.Stats(prof).strip_dirs().sort_stats("cumtime")
-        stats.print_stats(10)
 
     env.close()
 
 
+app = typer.Typer()
+
+
+@app.command()
+def main(profile: Annotated[bool, typer.Option()] = False):
+    """
+    Runs simulation of target chasers.
+    Profile sim with scalene turned off so it only starts with sim:
+    `scalene --cpu --off example/run.py --profile`
+    """
+    max_vel = 0.5
+    env = make(
+        "ChasingTargets-v0",
+        render_mode="human" if not profile else None,
+        n_robots=10,
+        n_targets=3,
+        robot_radius=ROBOT_RADIUS,
+        max_velocity=max_vel,
+        barrier_velocity_range=max_vel,
+        max_episode_steps=1000,
+        # recording_path=Path.cwd() / "test.mkv",
+    )
+
+    planner = Planner(ROBOT_RADIUS, env.dt, max_velocity=max_vel)
+    # planner = pure_pursuit
+
+    if profile:
+        from scalene import scalene_profiler
+
+        scalene_profiler.start()
+
+    run_sim(env, planner)
+
+    if profile:
+        scalene_profiler.stop()
+
+
 if __name__ == "__main__":
-    run_env()
+    app()
