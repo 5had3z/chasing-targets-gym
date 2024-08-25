@@ -1,13 +1,14 @@
-from typing import Dict
 from collections import deque
 
-import pygame
 import numpy as np
+import pygame
 
 from . import render_utils as ru
 
 
 class Robots:
+    """Class that contains a set of moving robots"""
+
     # So I don't have to remember indexes and prevent bugs
     _ax_lbl = ["x", "y", "t", "dx", "dy", "dt", "vL", "vR"]
     _l2i = {l: i for i, l in enumerate(_ax_lbl)}
@@ -71,7 +72,7 @@ class Robots:
     def vR(self, value):
         self.state[:, Robots._l2i["vR"]] = value
 
-    def step(self, action: Dict[str, np.ndarray]) -> None:
+    def step(self, action: dict[str, np.ndarray]) -> None:
         """Perform control action"""
         # Add state history
         for rhist, state in zip(self.history, self.state):
@@ -120,24 +121,25 @@ class Robots:
     ):
         if np.allclose(vL, vR, atol=1e-3):
             return vL * self.dt
-        elif np.allclose(vL, -vR, atol=1e-3):
+        if np.allclose(vL, -vR, atol=1e-3):
             return 0.0
-        else:
-            R = self.width / 2.0 * (vR + vL) / (vR - vL)
-            dtheta = (vR - vL) * self.dt / self.width
-            cx, cy = x - R * np.sin(theta), y + R * np.cos(theta)
 
-            Rabs = abs(R)
-            tlx, tly = ru.to_display(cx - Rabs, cy + Rabs)
-            Rx, Ry = int(ru.k * (2 * Rabs)), int(ru.k * (2 * Rabs))
+        R = self.width / 2.0 * (vR + vL) / (vR - vL)
+        dtheta = (vR - vL) * self.dt / self.width
+        cx, cy = x - R * np.sin(theta), y + R * np.cos(theta)
 
-            start_angle = theta - np.pi / 2.0 if R > 0 else theta + np.pi / 2.0
-            stop_angle = start_angle + dtheta
-            return ((tlx, tly), (Rx, Ry)), start_angle, stop_angle
+        Rabs = abs(R)
+        tlx, tly = ru.to_display(cx - Rabs, cy + Rabs)
+        Rx, Ry = int(ru.k * (2 * Rabs)), int(ru.k * (2 * Rabs))
+
+        start_angle = theta - np.pi / 2.0 if R > 0 else theta + np.pi / 2.0
+        stop_angle = start_angle + dtheta
+        return ((tlx, tly), (Rx, Ry)), start_angle, stop_angle
 
     def _draw(
         self, screen: pygame.Surface, wheel_blob: float, state: np.ndarray
     ) -> None:
+        """Draw individual robot"""
         _idxs = [self._l2i[l] for l in ["x", "y", "t", "vL", "vR"]]
         x, y, theta, vL, vR = state[_idxs]
         xy = np.stack([x, y], axis=-1)
@@ -176,7 +178,7 @@ class Robots:
                 )
 
     def draw(self, screen: pygame.Surface, wheel_blob: float):
-        # Draw robot history
+        """Draw robots on screen"""
         for history in self.history:
             for pos in history:
                 pygame.draw.circle(screen, ru.grey, ru.to_display(*pos), 3, 0)

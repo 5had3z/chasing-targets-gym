@@ -1,7 +1,6 @@
+import time
 from dataclasses import dataclass
 from pathlib import Path
-import time
-from typing import Tuple
 from warnings import warn
 
 try:
@@ -27,16 +26,18 @@ grey = (70, 70, 70)
 k = 160
 
 
-def to_display(x: float, y: float) -> Tuple[int, int]:
+def to_display(x: float, y: float) -> tuple[int, int]:
     """Transform simulation coordinate to display coordinate"""
     disp_center = np.array([WIDTH / 2, HEIGHT / 2])
     center_tf = (disp_center + k * np.array([x, -y])).astype(np.int32)
     return tuple(center_tf)
 
 
-@dataclass
+@dataclass(slots=True)
 class DecayingMarker:
-    position: Tuple[int, int]
+    """Marker that decays after a period of time"""
+
+    position: tuple[int, int]
     timestamp: float = -1.0
     decay: float = 2.0
 
@@ -44,14 +45,17 @@ class DecayingMarker:
         self.timestamp = time.time()
 
     def expired(self) -> bool:
+        """Marker is expired"""
         return time.time() - self.timestamp > self.decay
 
 
 class PyGameRecorder:
-    def __init__(self, filename: Path, size: Tuple[int, int], fps: float) -> None:
+    """Records pygame screen to video file"""
+
+    def __init__(self, filename: Path, video_size: tuple[int, int], fps: float) -> None:
         assert filename.parent.exists(), "Video destination path does not exist"
         self.video_writer = cv2.VideoWriter(
-            str(filename), cv2.VideoWriter_fourcc(*"MJPG"), fps, size
+            str(filename), cv2.VideoWriter_fourcc(*"MJPG"), fps, video_size
         )
         assert self.video_writer.isOpened(), "Error opening video writer"
 

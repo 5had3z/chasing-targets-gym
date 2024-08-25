@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Tuple, Any, Dict, List
+from typing import Any
 
 import gymnasium as gym
 import numpy as np
@@ -19,6 +19,28 @@ class RobotChasingTargetEnv(gym.Env):
     received by the agent includes information about the position, velocity and orientation of each
     robot, the future position of the target and the future positio of the obstacles. The goal of
     the agent is to navigate the robots to the target while avoiding collisions with the obstacles.
+
+    Args:
+        n_robots (int): The number of robots in the environment.
+        n_targets (int): The number of targets in the environment.
+        render_mode (str): The render mode of the environment, either "rgb_array" or "human".
+        barrier_radius (float): The radius of each barrier.
+        robot_radius (float): The radius of each robot.
+        wheel_blob (float): The size of the wheel blob.
+        max_velocity (float): The maximum velocity of each robot.
+        max_acceleration (float): The maximum acceleration of each robot.
+        barrier_velocity_range (float): The velocity range of each barrier.
+        dt (float): The time step of the simulation.
+        steps_ahead_to_plan (int): The number of steps ahead the robots should plan for.
+        reach_target_reward (float): The reward given when a robot reaches the target.
+        collision_penalty (float): The penalty given when a robot collides with a barrier or
+        another robot.
+        reset_when_target_reached (bool): A flag indicating whether the environment should reset
+            when a robot reaches the target.
+        recording_path (Path | None) : Optional path to write a video of the simulation to,
+            if none no video (default: None).
+        sandbox_dimensions (Tuple[float, float, float, float] | None): the extents of the sandbox
+            dimensions, default value is (-4., -3., 4., 3.)
     """
 
     metadata = {"render_modes": ["rgb_array", "human", "video"], "render_fps": 30}
@@ -39,30 +61,8 @@ class RobotChasingTargetEnv(gym.Env):
         collision_penalty: float = -500.0,
         reset_when_target_reached: bool = False,
         recording_path: Path | None = None,
-        sandbox_dimensions: Tuple[float, float, float, float] | None = None,
+        sandbox_dimensions: tuple[float, float, float, float] | None = None,
     ):
-        """
-        Args:
-            n_robots (int): The number of robots in the environment.
-            n_targets (int): The number of targets in the environment.
-            render_mode (str): The render mode of the environment, either "rgb_array" or "human".
-            barrier_radius (float): The radius of each barrier.
-            robot_radius (float): The radius of each robot.
-            wheel_blob (float): The size of the wheel blob.
-            max_velocity (float): The maximum velocity of each robot.
-            max_acceleration (float): The maximum acceleration of each robot.
-            barrier_velocity_range (float): The velocity range of each barrier.
-            dt (float): The time step of the simulation.
-            steps_ahead_to_plan (int): The number of steps ahead the robots should plan for.
-            reach_target_reward (float): The reward given when a robot reaches the target.
-            collision_penalty (float): The penalty given when a robot collides with a barrier or another robot.
-            reset_when_target_reached (bool): A flag indicating whether the environment should reset when a
-                robot reaches the target.
-            recording_path (Path | None) : Optional path to write a video of the simulation to,
-                if none no video (default: None).
-            sandbox_dimensions (Tuple[float, float, float, float] | None): the extents of the sandbox
-                dimensions, default value is (-4., -3., 4., 3.)
-        """
         self.robots = Robots(n_robots, robot_radius, dt, max_acceleration)
         self.targets = np.empty((n_targets, 4), dtype=np.float64)
         self.target_idxs = np.empty(n_robots, dtype=np.int64)
@@ -74,8 +74,8 @@ class RobotChasingTargetEnv(gym.Env):
         self.max_acceleration = max_acceleration
         self.barrier_velocity_range = barrier_velocity_range
 
-        self.collision_markers: List[DecayingMarker] = []
-        self.reward_markers: List[DecayingMarker] = []
+        self.collision_markers: list[DecayingMarker] = []
+        self.reward_markers: list[DecayingMarker] = []
 
         self.reach_target_reward = reach_target_reward
         self.collision_penalty = collision_penalty
@@ -190,7 +190,7 @@ class RobotChasingTargetEnv(gym.Env):
     def tau(self) -> float:
         return self.dt * self.steps_ahead_to_plan
 
-    def _get_obs(self) -> Dict[str, np.ndarray]:
+    def _get_obs(self) -> dict[str, np.ndarray]:
         targets = self.targets.copy()
         for _ in range(self.steps_ahead_to_plan):
             self._move_targets(targets)
@@ -208,7 +208,7 @@ class RobotChasingTargetEnv(gym.Env):
         self,
         *,
         seed: int | None = None,
-        options: Dict[str, Any] | None = None,
+        options: dict[str, Any] | None = None,
     ):
         super().reset(seed=seed)
 

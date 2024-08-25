@@ -1,11 +1,10 @@
-from pathlib import Path
-from typing import Dict
-from cProfile import Profile
 import pstats
+from cProfile import Profile
+
+import numpy as np
+from gymnasium import make
 
 import chasing_targets_gym
-from gymnasium import make
-import numpy as np
 
 try:
     from .planner import Planner
@@ -15,7 +14,7 @@ except ImportError:
 ROBOT_RADIUS = 0.1
 
 
-def update_step(robots: np.ndarray, target_pos: np.ndarray) -> Dict[str, np.ndarray]:
+def update_step(robots: np.ndarray, target_pos: np.ndarray) -> dict[str, np.ndarray]:
     """Returns action for robot using pure pursuit algorithm"""
     X, Y = 0, 1
     lr_control = np.full([robots.shape[0], 2], 0.5, dtype=np.float64)
@@ -29,7 +28,7 @@ def update_step(robots: np.ndarray, target_pos: np.ndarray) -> Dict[str, np.ndar
     return {"vL": lr_control[:, 0], "vR": lr_control[:, 1]}
 
 
-def pure_pursuit(obs: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
+def pure_pursuit(obs: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
     actions = []
     for robot, tgtid in zip(obs["current_robot"], obs["robot_target_idx"]):
         actions.append(update_step(robot[None], obs["future_target"][tgtid]))

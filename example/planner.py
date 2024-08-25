@@ -1,5 +1,3 @@
-from typing import Dict
-
 import numpy as np
 
 
@@ -34,7 +32,7 @@ class Planner:
     def width(self) -> float:
         return self.radius * 2.0
 
-    def predictPosition(self, vL: np.ndarray, vR: np.ndarray, robot: np.ndarray):
+    def predict_position(self, vL: np.ndarray, vR: np.ndarray, robot: np.ndarray):
         """
         Function to predict new robot position based on current pose and velocity controls
         Returns xnew, ynew, thetanew
@@ -55,7 +53,7 @@ class Planner:
 
         return robot + self.tau * np.stack([dx, dy, dt], axis=-1)
 
-    def calculateClosestObstacleDistance(self, robot, obstacle):
+    def closest_obstacle_distance(self, robot, obstacle):
         """
         Function to calculate the closest obstacle at
         a position (x, y). Used during planning.
@@ -63,7 +61,7 @@ class Planner:
         pairwise_distance = np.linalg.norm(robot[:, None] - obstacle[None], 2, axis=-1)
         return np.min(pairwise_distance, axis=1) - self.width
 
-    def chooseAction(
+    def choose_action(
         self,
         vL: float,
         vR: float,
@@ -84,10 +82,10 @@ class Planner:
         )
 
         # Predict new position in TAU seconds
-        new_robot_pos = self.predictPosition(actions[:, 0], actions[:, 1], robot)
+        new_robot_pos = self.predict_position(actions[:, 0], actions[:, 1], robot)
 
         # What is the distance to the closest obstacle from this possible position?
-        distanceToObstacle = self.calculateClosestObstacleDistance(
+        distanceToObstacle = self.closest_obstacle_distance(
             new_robot_pos[:, :2], obstacle
         )
 
@@ -119,7 +117,7 @@ class Planner:
 
         return {"vL": vLchosen, "vR": vRchosen}
 
-    def __call__(self, obs: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
+    def __call__(self, obs: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
         """
         Determine the best action depending on the state observation
         """
@@ -129,7 +127,7 @@ class Planner:
         for r_idx in range(n_robot):
             notr_idx = [i for i in range(0, n_robot) if i != r_idx]
             tgt_future = obs["future_target"][obs["robot_target_idx"][r_idx], :2]
-            action = self.chooseAction(
+            action = self.choose_action(
                 obs["vL"][r_idx, 0],
                 obs["vR"][r_idx, 0],
                 obs["current_robot"][r_idx, :3],

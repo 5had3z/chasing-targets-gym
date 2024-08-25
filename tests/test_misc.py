@@ -1,8 +1,9 @@
 from pathlib import Path
 
+import numpy as np
 import pytest
 from gymnasium import make
-import numpy as np
+
 import chasing_targets_gym
 
 
