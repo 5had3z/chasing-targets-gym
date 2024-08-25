@@ -40,16 +40,20 @@ class Planner:
         used to draw the possible paths during planning. Don't worry about the details of that.
         """
         _, _, theta = robot
+        cos_th = np.cos(theta)
+        sin_th = np.sin(theta)
         # First cover general motion case
         R = self.radius * (vR + vL) / (vR - vL + np.finfo(vR.dtype).eps)
         dt = (vR - vL) / self.width
-        dx = R * (np.sin(dt + theta) - np.sin(theta))
-        dy = -R * (np.cos(dt + theta) - np.cos(theta))
+        new_th = dt + theta
+        dx = R * (np.sin(new_th) - sin_th)
+        dy = -R * (np.cos(new_th) - cos_th)
 
         # Then cover straight motion case
-        mask = np.isclose(vL, vR)
-        dx[mask] = (vL * np.cos(theta))[mask]
-        dy[mask] = (vL * np.sin(theta))[mask]
+        mask = np.abs(vL - vR) < 1e-3
+        # assert (mask == np.isclose(vL, vR)).all()
+        dx[mask] = (vL * cos_th)[mask]
+        dy[mask] = (vL * sin_th)[mask]
 
         return robot + self.tau * np.stack([dx, dy, dt], axis=-1)
 

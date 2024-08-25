@@ -1,8 +1,8 @@
-import pstats
-from cProfile import Profile
+from typing import Annotated
 
 import numpy as np
-from gymnasium import make
+import typer
+from gymnasium import Env, make
 
 import chasing_targets_gym
 
@@ -38,45 +38,56 @@ def pure_pursuit(obs: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
     return action
 
 
-def run_env():
-    """Runs simulation of target chasers"""
+def run_sim(env: Env, planner):
+    observation, _ = env.reset(seed=2)
+
+    done = False
+    while not done:
+        action = planner(observation)
+        observation, _, terminated, truncated, _ = env.step(action)
+        if env.render_mode == "human":
+            env.render()
+        done = terminated or truncated
+
+    env.close()
+
+
+app = typer.Typer()
+
+
+@app.command()
+def main(profile: Annotated[bool, typer.Option()] = False):
+    """
+    Runs simulation of target chasers.
+    Profile sim with scalene turned off so it only starts with sim:
+    `scalene --cpu --off example/run.py --profile`
+    """
     max_vel = 0.5
     env = make(
         "ChasingTargets-v0",
-        render_mode="human",
+        render_mode="human" if not profile else None,
         n_robots=10,
         n_targets=3,
         robot_radius=ROBOT_RADIUS,
         max_velocity=max_vel,
         barrier_velocity_range=max_vel,
-        max_episode_steps=300,
+        max_episode_steps=1000,
         # recording_path=Path.cwd() / "test.mkv",
     )
 
-    observation, info = env.reset(seed=2)
-
-    planner = Planner(ROBOT_RADIUS, info["dt"], max_velocity=max_vel)
+    planner = Planner(ROBOT_RADIUS, env.get_wrapper_attr("dt"), max_velocity=max_vel)
     # planner = pure_pursuit
 
-    enable_profile = False
-    if enable_profile:
-        prof = Profile()
-        prof.enable()
+    if profile:
+        from scalene import scalene_profiler
 
-    done = False
-    while not done:
-        action = planner(observation)
-        observation, _, terminated, truncated, info = env.step(action)
-        env.render()
-        done = terminated or truncated
+        scalene_profiler.start()
 
-    if enable_profile:
-        prof.disable()
-        stats = pstats.Stats(prof).strip_dirs().sort_stats("cumtime")
-        stats.print_stats(10)
+    run_sim(env, planner)
 
-    env.close()
+    if profile:
+        scalene_profiler.stop()
 
 
 if __name__ == "__main__":
-    run_env()
+    app()
