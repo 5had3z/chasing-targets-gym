@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 from typing import Annotated
 
 import numpy as np
@@ -49,8 +50,6 @@ def run_sim(env: Env, planner):
             env.render()
         done = terminated or truncated
 
-    env.close()
-
 
 app = typer.Typer()
 
@@ -83,10 +82,13 @@ def main(profile: Annotated[bool, typer.Option()] = False):
 
         scalene_profiler.start()
 
-    run_sim(env, planner)
+    for _ in range(10 if profile else 1):
+        run_sim(env, planner)
 
     if profile:
         scalene_profiler.stop()
+
+    env.close()
 
 
 if __name__ == "__main__":

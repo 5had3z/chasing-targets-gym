@@ -25,7 +25,8 @@ class Planner:
         self.radius = agent_radius
         self.safe_dist = agent_radius
         self.max_velocity = max_velocity
-        self.dt = dt
+        dv = self.max_acceleration * dt
+        self.dv = np.array([-dv, 0, dv], dtype=np.float32)
         self.tau = dt * self.plan_ahead_steps
 
     @property
@@ -39,7 +40,7 @@ class Planner:
         Also returns path. This is just used for graphics, and returns some complicated stuff
         used to draw the possible paths during planning. Don't worry about the details of that.
         """
-        _, _, theta = robot
+        theta = robot[..., 2, None]
         cos_th = np.cos(theta)
         sin_th = np.sin(theta)
         # First cover general motion case
@@ -55,15 +56,18 @@ class Planner:
         dx[mask] = (vL * cos_th)[mask]
         dy[mask] = (vL * sin_th)[mask]
 
-        return robot + self.tau * np.stack([dx, dy, dt], axis=-1)
+        if robot.ndim == 2:  # Add extra dim when batched for broadcast
+            robot = robot[:, None]
+        return robot[..., :2] + self.tau * np.stack((dx, dy), axis=-1)
 
     def closest_obstacle_distance(self, robot, obstacle):
         """
-        Function to calculate the closest obstacle at
-        a position (x, y). Used during planning.
+        Calculates the closest obstacle at a position (x, y). Used during planning.
         """
-        pairwise_distance = np.linalg.norm(robot[:, None] - obstacle[None], 2, axis=-1)
-        return np.min(pairwise_distance, axis=1) - self.width
+        pairwise_distance = np.linalg.norm(
+            robot[..., None, :] - obstacle[..., None, :, :], 2, axis=-1
+        )
+        return np.min(pairwise_distance, axis=-1) - self.width
 
     def choose_action(
         self,
@@ -80,28 +84,23 @@ class Planner:
         for closeness to obstacles, for each of a choice of possible actions
         """
         # Range of possible motions: each of vL and vR could go up or down a bit
-        dv = self.max_acceleration * self.dt
-        actions = cartesian_product(
-            np.array((vL - dv, vL, vL + dv)), np.array((vR - dv, vR, vR + dv))
-        )
+        actions = cartesian_product(vL + self.dv, vR + self.dv)
+        # Remove invalid actions
+        actions = actions[np.all(np.abs(actions) < self.max_velocity, axis=-1)]
 
         # Predict new position in TAU seconds
         new_robot_pos = self.predict_position(actions[:, 0], actions[:, 1], robot)
 
-        # What is the distance to the closest obstacle from this possible position?
-        distanceToObstacle = self.closest_obstacle_distance(
-            new_robot_pos[:, :2], obstacle
-        )
-
         # Calculate how much close we've moved to target location
         previousTargetDistance = np.linalg.norm(robot[:2] - target, 2)
-        newTargetDistance = np.linalg.norm(new_robot_pos[:, :2] - target, 2, axis=1)
+        newTargetDistance = np.linalg.norm(new_robot_pos - target, 2, axis=1)
         distanceForward = previousTargetDistance - newTargetDistance
 
         # Positive benefit
         distanceBenefit = self.forward_weight * distanceForward
 
         # Negative cost: once we are less than SAFEDIST from collision, linearly increasing cost
+        distanceToObstacle = self.closest_obstacle_distance(new_robot_pos, obstacle)
         obstacleCost = (
             self.obstacle_weight
             * (self.safe_dist - distanceToObstacle)
@@ -111,34 +110,99 @@ class Planner:
         # Total benefit function to optimise
         benefit = distanceBenefit - obstacleCost
 
-        # Invalid actions are -inf cost
-        mask = np.abs(actions[:, 0]) > self.max_velocity
-        mask |= np.abs(actions[:, 1]) > self.max_velocity
-        benefit[mask] = -np.finfo(benefit.dtype).max
-
-        best_idx = np.argmax(benefit)
-        vLchosen, vRchosen = actions[best_idx]
+        # Select the best action's values
+        vLchosen, vRchosen = actions[np.argmax(benefit)]
 
         return {"vL": vLchosen, "vR": vRchosen}
 
-    def __call__(self, obs: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
-        """
-        Determine the best action depending on the state observation
-        """
+    def run_iterative(self, obs: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+        """Run old iterative algorithm"""
         n_robot = obs["vL"].shape[0]
-        actions = {k: np.empty((n_robot, 1), dtype=np.float64) for k in ["vL", "vR"]}
-
+        actions = {k: np.empty((n_robot, 1), dtype=np.float32) for k in ["vL", "vR"]}
+        tgt_future = obs["future_target"][obs["robot_target_idx"], :2]
         for r_idx in range(n_robot):
-            notr_idx = [i for i in range(0, n_robot) if i != r_idx]
-            tgt_future = obs["future_target"][obs["robot_target_idx"][r_idx], :2]
             action = self.choose_action(
                 obs["vL"][r_idx, 0],
                 obs["vR"][r_idx, 0],
                 obs["current_robot"][r_idx, :3],
-                tgt_future,
-                obs["future_robot"][notr_idx, :2],
+                tgt_future[r_idx],
+                np.delete(obs["future_robot"][:, :2], r_idx, axis=0),
             )
             for k in ["vL", "vR"]:
                 actions[k][r_idx] = action[k]
 
         return actions
+
+    def choose_action_batched(
+        self,
+        vL: np.ndarray,
+        vR: np.ndarray,
+        robot: np.ndarray,
+        target: np.ndarray,
+        obstacle: np.ndarray,
+    ):
+        """Run algorithm batched, trading memory for speed"""
+        actions = np.stack(
+            [cartesian_product(l + self.dv, r + self.dv) for l, r in zip(vL, vR)]
+        )
+
+        # Predict new position in TAU seconds
+        new_robot_pos = self.predict_position(actions[..., 0], actions[..., 1], robot)
+
+        # Calculate how much close we've moved to target location
+        previousTargetDistance = np.linalg.norm(robot[..., :2] - target, 2, axis=-1)
+        newTargetDistance = np.linalg.norm(new_robot_pos - target[:, None], 2, axis=-1)
+        distanceForward = previousTargetDistance[:, None] - newTargetDistance
+
+        # Positive benefit
+        distanceBenefit = self.forward_weight * distanceForward
+
+        # Negative cost: once we are less than SAFEDIST from collision, linearly increasing cost
+        distanceToObstacle = self.closest_obstacle_distance(new_robot_pos, obstacle)
+        obstacleCost = (
+            self.obstacle_weight
+            * (self.safe_dist - distanceToObstacle)
+            * (distanceToObstacle < self.safe_dist)
+        )
+
+        # Total benefit function to optimise
+        benefit = distanceBenefit - obstacleCost
+        invalid = np.any(np.abs(actions) > self.max_velocity, axis=-1)
+        benefit[invalid] = -np.inf
+
+        # Select the best action's values, not sure why np.take is misbehaving, loop instead
+        vLchosen, vRchosen = [], []
+        selects = np.argmax(benefit, axis=-1)
+        for action, select in zip(actions, selects):
+            vLchosen.append(action[select, 0])
+            vRchosen.append(action[select, 1])
+
+        return {"vL": np.array(vLchosen)[:, None], "vR": np.array(vRchosen)[:, None]}
+
+    def run_batched(self, obs: dict[str, np.ndarray]):
+        """Run entire algorithm batched"""
+        n_robot = obs["vL"].shape[0]
+        obstacles = np.stack(
+            [np.delete(obs["future_robot"][:, :2], i, axis=0) for i in range(n_robot)]
+        )
+        actions = {k: np.empty((n_robot, 1), dtype=np.float32) for k in ["vL", "vR"]}
+        tgt_future = obs["future_target"][obs["robot_target_idx"], :2]
+        actions = self.choose_action_batched(
+            obs["vL"],
+            obs["vR"],
+            obs["current_robot"][:, :3],
+            tgt_future,
+            obstacles,
+        )
+        return actions
+
+    def __call__(self, obs: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+        """
+        Determine the best action depending on the state observation
+        """
+        obs = {
+            k: v.astype(np.float32) if v.dtype.kind == "f" else v
+            for k, v in obs.items()
+        }
+
+        return self.run_batched(obs)
