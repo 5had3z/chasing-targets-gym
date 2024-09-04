@@ -101,18 +101,22 @@ class Robots:
         return pred
 
     def _calculate_velocity(self) -> np.ndarray:
+        theta = self.theta
+        cos_th = np.cos(theta)
+        sin_th = np.sin(theta)
+        vR = self.vR
+        vL = self.vL
+
         # First cover general motion case
-        R = (self.radius * (self.vR + self.vL)) / (
-            self.vR - self.vL + np.finfo(self.vR.dtype).eps
-        )
-        dt = (self.vR - self.vL) / self.width
-        dx = R * (np.sin(dt + self.theta) - np.sin(self.theta))
-        dy = -R * (np.cos(dt + self.theta) - np.cos(self.theta))
+        R = (self.radius * (vR + vL)) / (vR - vL + np.finfo(vR.dtype).eps)
+        dt = (vR - vL) / self.width
+        dx = R * (np.sin(dt + theta) - sin_th)
+        dy = -R * (np.cos(dt + theta) - cos_th)
 
         # Then cover straight motion case
-        mask = np.isclose(self.vL, self.vR)
-        dx[mask] = (self.vL * np.cos(self.theta))[mask]
-        dy[mask] = (self.vL * np.sin(self.theta))[mask]
+        mask = np.abs(vL - vR) < 1e-3
+        dx[mask] = (vL * cos_th)[mask]
+        dy[mask] = (vL * sin_th)[mask]
 
         return np.stack([dx, dy, dt], axis=-1)
 

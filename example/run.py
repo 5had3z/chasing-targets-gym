@@ -5,12 +5,7 @@ import numpy as np
 import typer
 from gymnasium import Env, make
 
-import chasing_targets_gym
-
-try:
-    from .planner import Planner
-except ImportError:
-    from planner import Planner
+from chasing_targets_gym.planner import Planner
 
 ROBOT_RADIUS = 0.1
 

@@ -1,3 +1,5 @@
+"""Example Planning Algorithm"""
+
 import numpy as np
 
 
