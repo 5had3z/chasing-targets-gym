@@ -14,7 +14,7 @@ class Robots:
     _l2i = {l: i for i, l in enumerate(_ax_lbl)}
 
     def __init__(self, n_robots: int, radius: float, dt: float, accel_limit: float):
-        self.state = np.zeros((n_robots, 8), dtype=float)
+        self.state = np.zeros((n_robots, 8), dtype=np.float32)
         self.accel_limit = accel_limit
         self.dt = dt
         self.radius = radius

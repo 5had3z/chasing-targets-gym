@@ -45,6 +45,8 @@ class RobotChasingTargetEnv(gym.Env):
 
     metadata = {"render_modes": ["rgb_array", "human", "video"], "render_fps": 30}
 
+    _f_dtype = np.float32
+
     def __init__(
         self,
         n_robots: int = 20,
@@ -64,7 +66,7 @@ class RobotChasingTargetEnv(gym.Env):
         sandbox_dimensions: tuple[float, float, float, float] | None = None,
     ):
         self.robots = Robots(n_robots, robot_radius, dt, max_acceleration)
-        self.targets = np.empty((n_targets, 4), dtype=np.float64)
+        self.targets = np.empty((n_targets, 4), dtype=self._f_dtype)
         self.target_idxs = np.empty(n_robots, dtype=np.int64)
         self.dt = dt
         self.steps_ahead_to_plan = steps_ahead_to_plan
@@ -102,7 +104,7 @@ class RobotChasingTargetEnv(gym.Env):
                     spaces.Box(
                         low=-self.max_velocity,
                         high=self.max_velocity,
-                        dtype=np.float64,
+                        dtype=self._f_dtype,
                     ),
                     stack=True,
                 ),
@@ -110,7 +112,7 @@ class RobotChasingTargetEnv(gym.Env):
                     spaces.Box(
                         low=-self.max_velocity,
                         high=self.max_velocity,
-                        dtype=np.float64,
+                        dtype=self._f_dtype,
                     ),
                     stack=True,
                 ),
@@ -123,7 +125,7 @@ class RobotChasingTargetEnv(gym.Env):
                     spaces.Box(
                         low=-self.max_velocity,
                         high=self.max_velocity,
-                        dtype=np.float64,
+                        dtype=self._f_dtype,
                     ),
                     stack=True,
                 ),
@@ -131,24 +133,32 @@ class RobotChasingTargetEnv(gym.Env):
                     spaces.Box(
                         low=-self.max_velocity,
                         high=self.max_velocity,
-                        dtype=np.float64,
+                        dtype=self._f_dtype,
                     ),
                     stack=True,
                 ),
                 "current_robot": spaces.Sequence(
-                    spaces.Box(low=-np.inf, high=np.inf, shape=(6,), dtype=np.float64),
+                    spaces.Box(
+                        low=-np.inf, high=np.inf, shape=(6,), dtype=self._f_dtype
+                    ),
                     stack=True,
                 ),
                 "future_robot": spaces.Sequence(
-                    spaces.Box(low=-np.inf, high=np.inf, shape=(6,), dtype=np.float64),
+                    spaces.Box(
+                        low=-np.inf, high=np.inf, shape=(6,), dtype=self._f_dtype
+                    ),
                     stack=True,
                 ),
                 "current_target": spaces.Sequence(
-                    spaces.Box(low=-np.inf, high=np.inf, shape=(4,), dtype=np.float64),
+                    spaces.Box(
+                        low=-np.inf, high=np.inf, shape=(4,), dtype=self._f_dtype
+                    ),
                     stack=True,
                 ),
                 "future_target": spaces.Sequence(
-                    spaces.Box(low=-np.inf, high=np.inf, shape=(4,), dtype=np.float64),
+                    spaces.Box(
+                        low=-np.inf, high=np.inf, shape=(4,), dtype=self._f_dtype
+                    ),
                     stack=True,
                 ),
                 "robot_target_idx": spaces.Sequence(
@@ -215,26 +225,28 @@ class RobotChasingTargetEnv(gym.Env):
         # Setup random target states
         self.targets[:, 0] = self.np_random.uniform(
             self.field_limits[0], self.field_limits[2], self.n_targets
-        )
+        ).astype(self._f_dtype)
         self.targets[:, 1] = self.np_random.uniform(
             self.field_limits[1], self.field_limits[3], self.n_targets
-        )
+        ).astype(self._f_dtype)
         self.targets[:, 2] = self.np_random.normal(
             0.0, self.barrier_velocity_range, self.n_targets
-        )
+        ).astype(self._f_dtype)
         self.targets[:, 3] = self.np_random.normal(
             0.0, self.barrier_velocity_range, self.n_targets
-        )
+        ).astype(self._f_dtype)
 
         # Setup robots at random poses
         self.robots.reset()
         self.robots.x = self.np_random.uniform(
             self.field_limits[0], self.field_limits[2], self.n_robots
-        )
+        ).astype(self._f_dtype)
         self.robots.y = self.np_random.uniform(
             self.field_limits[1], self.field_limits[3], self.n_robots
+        ).astype(self._f_dtype)
+        self.robots.theta = self.np_random.uniform(-np.pi, np.pi, self.n_robots).astype(
+            self._f_dtype
         )
-        self.robots.theta = self.np_random.uniform(-np.pi, np.pi, self.n_robots)
 
         self.target_idxs = self.np_random.integers(0, self.n_targets, self.n_robots)
 
@@ -261,33 +273,39 @@ class RobotChasingTargetEnv(gym.Env):
         self._move_targets(self.targets)
         self.robots.step(action)
 
-        reward = 0
-        for ridx in range(len(self.robots)):
-            not_ridx = [i for i in range(len(self.robots)) if i != ridx]
-            tgt_idx = self.target_idxs[ridx]
-            robot_position = self.robots.state[ridx, :2]
-            all_positions = np.concatenate(
-                [self.robots.state[not_ridx, :2], self.targets[[tgt_idx], :2]], axis=0
-            )
-            distances: np.ndarray = np.linalg.norm(
-                all_positions - robot_position, 2, axis=-1
-            )
-            collisions = distances < self.robot_width
-            reward += collisions[:-1].sum() * self.collision_penalty
+        all_positions = np.concatenate(
+            [self.robots.state[:, :2], self.targets[:, :2]], axis=0
+        )
+        distances: np.ndarray = np.linalg.norm(
+            self.robots.state[:, None, :2] - all_positions[None], 2, axis=-1
+        )
+        collisions = distances < self.robot_width
 
-            if self.render_mode == "human":
-                collision_coords = all_positions[:-1][collisions[:-1]]
-                for coord in collision_coords:
-                    mean_coord = (coord + robot_position) / 2
-                    self.collision_markers.append(DecayingMarker(mean_coord))
+        reward = (
+            0.5
+            * self.collision_penalty
+            * ((collisions[:, : self.n_robots].sum() - self.n_robots))
+        )
 
-            # Check if collided with the target
-            if collisions[-1]:
+        offset_tgt = self.target_idxs + self.n_robots
+        for ridx in range(self.n_robots):
+            if collisions[ridx, offset_tgt[ridx]]:
                 reward += self.reach_target_reward
-                mean_coord = (all_positions[-1] + robot_position) / 2
-                self.reward_markers.append(DecayingMarker(mean_coord))
                 self.target_idxs[ridx] = self.np_random.integers(0, self.n_targets)
                 self.robots.history[ridx].clear()
+
+        if self.render_mode == "human":
+            for ridx in range(self.n_robots):
+                robot_position = self.robots.state[ridx, :2]
+                collision_coords = all_positions[collisions[ridx]]
+                for idx, coord in zip(np.argwhere(collisions[ridx]), collision_coords):
+                    mean_coord = (coord + robot_position) * 0.5
+                    if idx == ridx:
+                        pass
+                    elif idx < self.n_robots:
+                        self.collision_markers.append(DecayingMarker(mean_coord))
+                    else:
+                        self.reward_markers.append(DecayingMarker(mean_coord))
 
         return self._get_obs(), reward, False, False, self._info
 
