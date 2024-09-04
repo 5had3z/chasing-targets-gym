@@ -31,3 +31,6 @@ dependencies = ["numpy", "gymnasium>=0.28.1", "pygame"]
 [project.urls]
 "Homepage" = "https://github.com/5had3z/chasing-targets-gym"
 "Bug Tracker" = "https://github.com/5had3z/chasing-targets-gym/issues"
+
+[project.scripts]
+chasing-targets-example = "chasing_targets_gym:_main"

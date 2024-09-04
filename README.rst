@@ -29,6 +29,36 @@ example of a simulation with robot controller is shown below.
 
 .. image:: misc/example_sim.gif
 
+
+Usage
+-----
+
+Since this uses the gymnasium, you can spin an environment up same as any other env, and you can use our optimized planner. A script is included that shows of this planner and environment when you install this library ```chasing-targets-example --max-step=500```.
+
+.. code:: python
+    
+    from gymnasium import Env, make
+    from chasing_targets_gym.planner import Planner
+
+    env: Env = make(
+        "ChasingTargets-v0",
+        render_mode="human",
+        n_robots=10,
+        n_targets=3,
+        robot_radius=0.1,
+        max_velocity=0.5,
+        barrier_velocity_range=0.5,
+        max_episode_steps=1000,
+    )
+
+    planner = Planner(
+        env.get_wrapper_attr("robot_radius"),
+        env.get_wrapper_attr("dt"),
+        env.get_wrapper_attr("max_velocity"),
+    )
+
+
+
 Installation
 ------------
 

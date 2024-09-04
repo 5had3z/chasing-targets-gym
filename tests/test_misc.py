@@ -19,7 +19,12 @@ def test_init():
         max_episode_steps=30,
     )
     env.reset()
-    env.step({"vL": np.full((10, 1), 0.0), "vR": np.full((10, 1), 0.0)})
+    env.step(
+        {
+            "vL": np.full((10, 1), 0.0, dtype=np.float32),
+            "vR": np.full((10, 1), 0.0, dtype=np.float32),
+        }
+    )
     env.close()
 
 
@@ -36,15 +41,30 @@ def test_limits():
     )
     env.reset()
     # Within limits
-    env.step({"vL": np.full((10, 1), 0.5), "vR": np.full((10, 1), -0.5)})
+    env.step(
+        {
+            "vL": np.full((10, 1), 0.5, dtype=np.float32),
+            "vR": np.full((10, 1), -0.5, dtype=np.float32),
+        }
+    )
 
     # Too big
     with pytest.raises(AssertionError):
-        env.step({"vL": np.full((10, 1), 0.6), "vR": np.full((10, 1), 0.0)})
+        env.step(
+            {
+                "vL": np.full((10, 1), 0.6, dtype=np.float32),
+                "vR": np.full((10, 1), 0.0, dtype=np.float32),
+            }
+        )
 
     # Too small
     with pytest.raises(AssertionError):
-        env.step({"vL": np.full((10, 1), 0.0), "vR": np.full((10, 1), -0.6)})
+        env.step(
+            {
+                "vL": np.full((10, 1), 0.0, dtype=np.float32),
+                "vR": np.full((10, 1), -0.6, dtype=np.float32),
+            }
+        )
 
     env.close()
 
@@ -67,7 +87,10 @@ def test_video_writer(tmp_path: Path):
     done = False
     while not done:
         _, _, terminated, truncated, _ = env.step(
-            {"vL": np.full((10, 1), 0.0), "vR": np.full((10, 1), 0.0)}
+            {
+                "vL": np.full((10, 1), 0.0, dtype=np.float32),
+                "vR": np.full((10, 1), 0.0, dtype=np.float32),
+            }
         )
         env.render()
         done = terminated or truncated
