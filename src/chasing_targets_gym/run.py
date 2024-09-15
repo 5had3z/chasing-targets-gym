@@ -36,9 +36,9 @@ def pure_pursuit(obs: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
     return action
 
 
-def run_sim(env: RobotChasingTargetEnv, planner, max_step: int):
+def run_sim(env: RobotChasingTargetEnv, planner, max_step: int, seed: int):
     """Run stimulation until terminated/truncated or max_step"""
-    observation, _ = env.reset(seed=2)
+    observation, _ = env.reset(seed=seed)
 
     steps = 0
     done = False
@@ -62,6 +62,7 @@ def main(
     max_step: Annotated[int, typer.Option(help="Max step before termination")] = 500,
     record: Annotated[Optional[str], typer.Option(help="Filename to record")] = None,
     use_pure_pursuit: Annotated[bool, typer.Option(help="Greedy algorithm")] = False,
+    seed: Annotated[int, typer.Option(help="Seed for simulation")] = 0,
 ):
     """
     Runs simulation of target chasers. When profiling is disabled, it will visualize the game.
@@ -73,7 +74,7 @@ def main(
         n_targets=3,
         robot_radius=ROBOT_RADIUS,
         max_velocity=MAX_VEL,
-        barrier_velocity_range=MAX_VEL,
+        target_velocity_std=MAX_VEL,
         recording_path=Path.cwd() / record if record is not None else None,
     )
 
@@ -93,7 +94,7 @@ def main(
         scalene_profiler.start()
 
     for _ in range(10 if profile else 1):
-        run_sim(env, planner, max_step)
+        run_sim(env, planner, max_step, seed)
 
     if profile:
         scalene_profiler.stop()

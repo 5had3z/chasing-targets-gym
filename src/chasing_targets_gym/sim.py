@@ -7,7 +7,6 @@ import pygame
 from gymnasium import spaces
 
 from . import render_utils as ru
-from .render_utils import DecayingMarker, PyGameRecorder
 from .robots import Robots
 
 
@@ -29,18 +28,19 @@ class RobotChasingTargetEnv(gym.Env):
         wheel_blob (float): The size of the wheel blob.
         max_velocity (float): The maximum velocity of each robot.
         max_acceleration (float): The maximum acceleration of each robot.
-        barrier_velocity_range (float): The velocity range of each barrier.
+        target_velocity_std (float): Standard deviation used for the normal distribution used for\
+generating target particle velocities.
         dt (float): The time step of the simulation.
         steps_ahead_to_plan (int): The number of steps ahead the robots should plan for.
         reach_target_reward (float): The reward given when a robot reaches the target.
-        collision_penalty (float): The penalty given when a robot collides with a barrier or
-        another robot.
-        reset_when_target_reached (bool): A flag indicating whether the environment should reset
-            when a robot reaches the target.
-        recording_path (Path | None) : Optional path to write a video of the simulation to,
-            if none no video (default: None).
-        sandbox_dimensions (Tuple[float, float, float, float] | None): the extents of the sandbox
-            dimensions, default value is (-4., -3., 4., 3.)
+        collision_penalty (float): The penalty given when a robot collides with a barrier or\
+another robot.
+        reset_when_target_reached (bool): A flag indicating whether the environment should reset\
+when a robot reaches the target.
+        recording_path (Path | None) : Optional path to write a video of the simulation to,\
+if none no video (default: None).
+        sandbox_dimensions (Tuple[float, float, float, float] | None): the extents of the sandbox\
+dimensions, default value is (-4., -3., 4., 3.)
     """
 
     metadata = {"render_modes": ["rgb_array", "human", "video"], "render_fps": 30}
@@ -56,7 +56,7 @@ class RobotChasingTargetEnv(gym.Env):
         wheel_blob: float = 0.04,
         max_velocity: float = 0.5,
         max_acceleration: float = 0.4,
-        barrier_velocity_range: float = 0.2,
+        target_velocity_std: float = 0.2,
         dt: float = 0.1,
         steps_ahead_to_plan: int = 10,
         reach_target_reward: float = 1000.0,
@@ -74,10 +74,10 @@ class RobotChasingTargetEnv(gym.Env):
         self.wheel_blob = wheel_blob
         self.max_velocity = max_velocity
         self.max_acceleration = max_acceleration
-        self.barrier_velocity_range = barrier_velocity_range
+        self.target_velocity_std = target_velocity_std
 
-        self.collision_markers: list[DecayingMarker] = []
-        self.reward_markers: list[DecayingMarker] = []
+        self.collision_markers: list[ru.DecayingMarker] = []
+        self.reward_markers: list[ru.DecayingMarker] = []
 
         self.reach_target_reward = reach_target_reward
         self.collision_penalty = collision_penalty
@@ -89,7 +89,7 @@ class RobotChasingTargetEnv(gym.Env):
         self.recorder = (
             None
             if recording_path is None
-            else PyGameRecorder(recording_path, ru.size, self.metadata["render_fps"])
+            else ru.PyGameRecorder(recording_path, ru.size, self.metadata["render_fps"])
         )
 
         self.render_mode = render_mode
@@ -100,70 +100,65 @@ class RobotChasingTargetEnv(gym.Env):
 
         self.action_space = spaces.Dict(
             {
-                "vR": spaces.Sequence(
-                    spaces.Box(
-                        low=-self.max_velocity,
-                        high=self.max_velocity,
-                        dtype=self._f_dtype,
-                    ),
-                    stack=True,
+                "vR": spaces.Box(
+                    low=-self.max_velocity,
+                    high=self.max_velocity,
+                    dtype=self._f_dtype,
+                    shape=(n_robots,),
                 ),
-                "vL": spaces.Sequence(
-                    spaces.Box(
-                        low=-self.max_velocity,
-                        high=self.max_velocity,
-                        dtype=self._f_dtype,
-                    ),
-                    stack=True,
+                "vL": spaces.Box(
+                    low=-self.max_velocity,
+                    high=self.max_velocity,
+                    dtype=self._f_dtype,
+                    shape=(n_robots,),
                 ),
             }
         )
 
+        min_limit = list(self.field_limits[:2])
+        max_limit = list(self.field_limits[2:])
+
+        target_min = np.array(min_limit + [-max_velocity] * 2, dtype=self._f_dtype)
+        target_min = np.repeat(target_min[None], n_targets, axis=0)
+        target_max = np.array(max_limit + [max_velocity] * 2, dtype=self._f_dtype)
+        target_max = np.repeat(target_max[None], n_targets, axis=0)
+
+        robot_min = np.array(
+            min_limit
+            + [-np.pi]
+            + [-max_velocity] * 2
+            + [-self.max_velocity / robot_radius],
+            dtype=self._f_dtype,
+        )
+        robot_min = np.repeat(robot_min[None], n_robots, axis=0)
+        robot_max = np.array(
+            max_limit
+            + [np.pi]
+            + [max_velocity] * 2
+            + [self.max_velocity / robot_radius],
+            dtype=self._f_dtype,
+        )
+        robot_max = np.repeat(robot_max[None], n_robots, axis=0)
+
         self.observation_space = spaces.Dict(
             {
-                "vR": spaces.Sequence(
-                    spaces.Box(
-                        low=-self.max_velocity,
-                        high=self.max_velocity,
-                        dtype=self._f_dtype,
-                    ),
-                    stack=True,
+                "vR": spaces.Box(
+                    low=-self.max_velocity,
+                    high=self.max_velocity,
+                    dtype=self._f_dtype,
+                    shape=(n_robots,),
                 ),
-                "vL": spaces.Sequence(
-                    spaces.Box(
-                        low=-self.max_velocity,
-                        high=self.max_velocity,
-                        dtype=self._f_dtype,
-                    ),
-                    stack=True,
+                "vL": spaces.Box(
+                    low=-self.max_velocity,
+                    high=self.max_velocity,
+                    dtype=self._f_dtype,
+                    shape=(n_robots,),
                 ),
-                "current_robot": spaces.Sequence(
-                    spaces.Box(
-                        low=-np.inf, high=np.inf, shape=(6,), dtype=self._f_dtype
-                    ),
-                    stack=True,
-                ),
-                "future_robot": spaces.Sequence(
-                    spaces.Box(
-                        low=-np.inf, high=np.inf, shape=(6,), dtype=self._f_dtype
-                    ),
-                    stack=True,
-                ),
-                "current_target": spaces.Sequence(
-                    spaces.Box(
-                        low=-np.inf, high=np.inf, shape=(4,), dtype=self._f_dtype
-                    ),
-                    stack=True,
-                ),
-                "future_target": spaces.Sequence(
-                    spaces.Box(
-                        low=-np.inf, high=np.inf, shape=(4,), dtype=self._f_dtype
-                    ),
-                    stack=True,
-                ),
-                "robot_target_idx": spaces.Sequence(
-                    spaces.Discrete(n=n_targets), stack=True
-                ),
+                "current_robot": spaces.Box(low=robot_min, high=robot_max),
+                "future_robot": spaces.Box(low=robot_min, high=robot_max),
+                "current_target": spaces.Box(low=target_min, high=target_max),
+                "future_target": spaces.Box(low=target_min, high=target_max),
+                "robot_target_idx": spaces.MultiDiscrete(nvec=[n_targets] * n_robots),
             }
         )
 
@@ -204,15 +199,27 @@ class RobotChasingTargetEnv(gym.Env):
         targets = self.targets.copy()
         for _ in range(self.steps_ahead_to_plan):
             self._move_targets(targets)
-        return {
-            "vR": self.robots.vR[..., None],
-            "vL": self.robots.vL[..., None],
+
+        robot_est = self.robots.forecast(self.tau)
+        for i in [0, 1]:
+            np.clip(
+                robot_est[:, i],
+                self.field_limits[i],
+                self.field_limits[i + 2],
+                robot_est[:, i],
+            )
+
+        obs = {
+            "vR": self.robots.vR,
+            "vL": self.robots.vL,
             "current_robot": self.robots.state[:, :6],
-            "future_robot": self.robots.forecast(self.tau),
+            "future_robot": robot_est,
             "current_target": self.targets,
             "future_target": targets,
             "robot_target_idx": self.target_idxs,
         }
+        # assert self.observation_space.contains(obs)
+        return obs
 
     def reset(
         self,
@@ -229,12 +236,16 @@ class RobotChasingTargetEnv(gym.Env):
         self.targets[:, 1] = self.np_random.uniform(
             self.field_limits[1], self.field_limits[3], self.n_targets
         ).astype(self._f_dtype)
-        self.targets[:, 2] = self.np_random.normal(
-            0.0, self.barrier_velocity_range, self.n_targets
-        ).astype(self._f_dtype)
-        self.targets[:, 3] = self.np_random.normal(
-            0.0, self.barrier_velocity_range, self.n_targets
-        ).astype(self._f_dtype)
+        self.targets[:, 2] = (
+            self.np_random.normal(0.0, self.target_velocity_std, self.n_targets)
+            .clip(-self.max_velocity, self.max_velocity)
+            .astype(self._f_dtype)
+        )
+        self.targets[:, 3] = (
+            self.np_random.normal(0.0, self.target_velocity_std, self.n_targets)
+            .clip(-self.max_velocity, self.max_velocity)
+            .astype(self._f_dtype)
+        )
 
         # Setup robots at random poses
         self.robots.reset()
@@ -258,20 +269,33 @@ class RobotChasingTargetEnv(gym.Env):
 
     def _move_targets(self, targets: np.ndarray) -> None:
         targets[:, :2] += targets[:, 2:] * self.dt
-        # Flip velocity when hitting boundary
+
+        # Flip velocity when hitting boundary and clip particle to boundary limit.
         mask = targets[:, 0] < self.field_limits[0]
         mask |= targets[:, 0] > self.field_limits[2]
         targets[mask, 2] *= -1
+        np.clip(
+            targets[:, 0], self.field_limits[0], self.field_limits[2], targets[:, 0]
+        )
 
         mask = targets[:, 1] < self.field_limits[1]
         mask |= targets[:, 1] > self.field_limits[3]
         targets[mask, 3] *= -1
+        np.clip(
+            targets[:, 1], self.field_limits[1], self.field_limits[3], targets[:, 1]
+        )
 
     def step(self, action: dict[str, np.ndarray]):
         assert self.action_space.contains(action)
-
         self._move_targets(self.targets)
         self.robots.step(action)
+        # Robots can scrape against the border
+        np.clip(
+            self.robots.x, self.field_limits[0], self.field_limits[2], self.robots.x
+        )
+        np.clip(
+            self.robots.y, self.field_limits[1], self.field_limits[3], self.robots.y
+        )
 
         all_positions = np.concatenate(
             [self.robots.state[:, :2], self.targets[:, :2]], axis=0
@@ -303,9 +327,9 @@ class RobotChasingTargetEnv(gym.Env):
                     if idx == ridx:
                         pass
                     elif idx < self.n_robots:
-                        self.collision_markers.append(DecayingMarker(mean_coord))
+                        self.collision_markers.append(ru.DecayingMarker(mean_coord))
                     else:
-                        self.reward_markers.append(DecayingMarker(mean_coord))
+                        self.reward_markers.append(ru.DecayingMarker(mean_coord))
 
         return self._get_obs(), reward, False, False, self._info
 

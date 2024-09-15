@@ -72,6 +72,13 @@ class Robots:
     def vR(self, value):
         self.state[:, Robots._l2i["vR"]] = value
 
+    @staticmethod
+    def wrap_angle(angle):
+        """Ensure angle is in range [-pi,pi]"""
+        angle[angle > np.pi] -= 2 * np.pi
+        angle[angle < -np.pi] += 2 * np.pi
+        return angle
+
     def step(self, action: dict[str, np.ndarray]) -> None:
         """Perform control action"""
         # Add state history
@@ -82,8 +89,8 @@ class Robots:
 
         # Update intended control inputs
         max_dv = self.accel_limit * self.dt
-        self.vL = np.clip(action["vL"][:, 0], self.vL - max_dv, self.vL + max_dv)
-        self.vR = np.clip(action["vR"][:, 0], self.vR - max_dv, self.vR + max_dv)
+        self.vL = np.clip(action["vL"], self.vL - max_dv, self.vL + max_dv)
+        self.vR = np.clip(action["vR"], self.vR - max_dv, self.vR + max_dv)
 
         # Calculate rate of change
         dxdyxt = self._calculate_velocity()
@@ -91,13 +98,23 @@ class Robots:
         # Update state
         self.state[:, :3] += self.dt * dxdyxt
         self.state[:, 3:6] = dxdyxt
+        self.state[:, 2] = self.wrap_angle(self.state[:, 2])
 
     def forecast(self, dt: float | None = None) -> np.ndarray:
-        dt = dt if dt is not None else self.dt
+        """Predict the future state given the current state
+
+        Args:
+            dt (float | None, optional): Timestep to linearly forecast. Defaults to None.
+
+        Returns:
+            np.ndarray: Predicted state dt into the future.
+        """
+        dt = self.dt if dt is None else dt
         dxdydt = self._calculate_velocity()
         pred = self.state[:, :6].copy()
         pred[:, :3] += dxdydt * dt
         pred[:, 3:] = dxdydt
+        pred[:, 2] = self.wrap_angle(pred[:, 2])
         return pred
 
     def _calculate_velocity(self) -> np.ndarray:

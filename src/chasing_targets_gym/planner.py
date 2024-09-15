@@ -120,7 +120,7 @@ class Planner:
     def run_iterative(self, obs: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
         """Run old iterative algorithm"""
         n_robot = obs["vL"].shape[0]
-        actions = {k: np.empty((n_robot, 1), dtype=np.float32) for k in ["vL", "vR"]}
+        actions = {k: np.empty(n_robot, dtype=np.float32) for k in ["vL", "vR"]}
         tgt_future = obs["future_target"][obs["robot_target_idx"], :2]
         for r_idx in range(n_robot):
             action = self.choose_action(
@@ -179,7 +179,7 @@ class Planner:
             vLchosen.append(action[select, 0])
             vRchosen.append(action[select, 1])
 
-        return {"vL": np.array(vLchosen)[:, None], "vR": np.array(vRchosen)[:, None]}
+        return {"vL": np.array(vLchosen), "vR": np.array(vRchosen)}
 
     def run_batched(self, obs: dict[str, np.ndarray]):
         """Run entire algorithm batched"""

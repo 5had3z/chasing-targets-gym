@@ -47,7 +47,7 @@ Since this uses the gymnasium, you can spin an environment up same as any other 
         n_targets=3,
         robot_radius=0.1,
         max_velocity=0.5,
-        barrier_velocity_range=0.5,
+        target_velocity_std=0.5,
         max_episode_steps=1000,
     )
 
