@@ -2,7 +2,6 @@
 #include <pybind11/pybind11.h>
 
 #include <algorithm>
-#include <format>
 #include <iostream>
 #include <ranges>
 #include <span>
