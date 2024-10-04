@@ -13,18 +13,30 @@ class Robots:
     _ax_lbl = ["x", "y", "t", "dx", "dy", "dt", "vL", "vR"]
     _l2i = {l: i for i, l in enumerate(_ax_lbl)}
 
-    def __init__(self, n_robots: int, radius: float, dt: float, accel_limit: float):
+    def __init__(
+        self,
+        n_robots: int,
+        radius: float,
+        dt: float,
+        accel_limit: float,
+        enable_history: bool,
+    ):
         self.state = np.zeros((n_robots, 8), dtype=np.float32)
         self.accel_limit = accel_limit
         self.dt = dt
         self.radius = radius
-        self.history = [deque() for _ in range(n_robots)]
+        if enable_history:
+            self.history = [deque() for _ in range(n_robots)]
+        else:
+            self.history = None
 
     def __len__(self):
         return self.state.shape[0]
 
     def reset(self):
         self.state.fill(0)
+        if self.history is None:
+            return
         for h in self.history:
             h.clear()
 
@@ -82,10 +94,11 @@ class Robots:
     def step(self, action: dict[str, np.ndarray]) -> None:
         """Perform control action"""
         # Add state history
-        for rhist, state in zip(self.history, self.state):
-            rhist.append(tuple(state[:2]))
-            if len(rhist) > 10:
-                rhist.popleft()
+        if self.history is not None:
+            for rhist, state in zip(self.history, self.state):
+                rhist.append(tuple(state[:2]))
+                if len(rhist) > 10:
+                    rhist.popleft()
 
         # Update intended control inputs
         max_dv = self.accel_limit * self.dt
@@ -203,9 +216,10 @@ class Robots:
 
     def draw(self, screen: pygame.Surface, wheel_blob: float):
         """Draw robots on screen"""
-        for history in self.history:
-            for pos in history:
-                pygame.draw.circle(screen, ru.grey, ru.to_display(*pos), 3, 0)
+        if self.history is not None:
+            for history in self.history:
+                for pos in history:
+                    pygame.draw.circle(screen, ru.grey, ru.to_display(*pos), 3, 0)
 
         for robot in self.state:
             self._draw(screen, wheel_blob, robot)

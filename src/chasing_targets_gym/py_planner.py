@@ -1,8 +1,7 @@
 """Example Planning Algorithm"""
 
-from typing_extensions import deprecated
-
 import numpy as np
+from typing_extensions import deprecated
 
 
 def cartesian_product(*arrays):

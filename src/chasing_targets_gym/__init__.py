@@ -1,8 +1,8 @@
 from gymnasium.envs.registration import register
 
-from .sim import RobotChasingTargetEnv
-from .run import _main
 from ._planner import Planner
+from .run import _main
+from .sim import RobotChasingTargetEnv
 
 register(
     id="ChasingTargets-v0",

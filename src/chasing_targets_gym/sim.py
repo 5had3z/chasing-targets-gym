@@ -7,8 +7,8 @@ import pygame
 from gymnasium import spaces
 
 from . import render_utils as ru
-from .robots import Robots
 from ._planner import inplaceMoveTargets
+from .robots import Robots
 
 
 class RobotChasingTargetEnv(gym.Env):
@@ -66,7 +66,13 @@ dimensions, default value is (-4., -3., 4., 3.)
         recording_path: Path | None = None,
         sandbox_dimensions: tuple[float, float, float, float] | None = None,
     ):
-        self.robots = Robots(n_robots, robot_radius, dt, max_acceleration)
+        self.robots = Robots(
+            n_robots,
+            robot_radius,
+            dt,
+            max_acceleration,
+            enable_history=render_mode is not None,
+        )
         self.targets = np.empty((n_targets, 4), dtype=self._f_dtype)
         self.target_idxs = np.empty(n_robots, dtype=np.int64)
         self.dt = dt
@@ -282,39 +288,48 @@ dimensions, default value is (-4., -3., 4., 3.)
             self.robots.y, self.field_limits[1], self.field_limits[3], self.robots.y
         )
 
-        all_positions = np.concatenate(
-            [self.robots.state[:, :2], self.targets[:, :2]], axis=0
+        robot_collisions: np.ndarray[bool] = (
+            np.linalg.norm(
+                self.robots.state[:, None, :2] - self.robots.state[None, :, :2],
+                2,
+                axis=-1,
+            )
+            < self.robot_width
         )
-        distances: np.ndarray = np.linalg.norm(
-            self.robots.state[:, None, :2] - all_positions[None], 2, axis=-1
-        )
-        collisions = distances < self.robot_width
 
         reward = (
-            0.5
-            * self.collision_penalty
-            * ((collisions[:, : self.n_robots].sum() - self.n_robots))
+            0.5 * self.collision_penalty * ((robot_collisions.sum() - self.n_robots))
         )
 
-        offset_tgt = self.target_idxs + self.n_robots
-        for ridx in range(self.n_robots):
-            if collisions[ridx, offset_tgt[ridx]]:
-                reward += self.reach_target_reward
-                self.target_idxs[ridx] = self.np_random.integers(0, self.n_targets)
-                self.robots.history[ridx].clear()
+        target_collisions: np.ndarray[bool] = (
+            np.linalg.norm(
+                self.robots.state[:, :2] - self.targets[self.target_idxs, :2],
+                2,
+                axis=-1,
+            )
+            < self.robot_width
+        )
 
+        # Render before changing targets
         if self.render_mode == "human":
-            for ridx in range(self.n_robots):
-                robot_position = self.robots.state[ridx, :2]
-                collision_coords = all_positions[collisions[ridx]]
-                for idx, coord in zip(np.argwhere(collisions[ridx]), collision_coords):
-                    mean_coord = (coord + robot_position) * 0.5
-                    if idx == ridx:
-                        pass
-                    elif idx < self.n_robots:
-                        self.collision_markers.append(ru.DecayingMarker(mean_coord))
-                    else:
-                        self.reward_markers.append(ru.DecayingMarker(mean_coord))
+            for coord in np.argwhere(robot_collisions):
+                if coord[0] == coord[1]:
+                    continue
+                rob_a = self.robots.state[coord[0], :2]
+                rob_b = self.robots.state[coord[1], :2]
+                mean_coord = (rob_a + rob_b) * 0.5
+                self.collision_markers.append(ru.DecayingMarker(mean_coord.flatten()))
+            for idx in np.argwhere(target_collisions):
+                rob = self.robots.state[idx, :2]
+                tgt = self.targets[self.target_idxs[idx], :2]
+                mean_coord = (rob + tgt) * 0.5
+                self.reward_markers.append(ru.DecayingMarker(mean_coord.flatten()))
+
+        num_coll = target_collisions.sum()
+        reward += self.reach_target_reward * num_coll
+        self.target_idxs[target_collisions] = self.np_random.integers(
+            0, self.n_targets, num_coll
+        )
 
         return self._get_obs(), reward, False, False, self._info
 

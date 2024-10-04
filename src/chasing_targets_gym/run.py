@@ -8,7 +8,6 @@ import typer
 from ._planner import Planner
 from .sim import RobotChasingTargetEnv
 
-
 ROBOT_RADIUS = 0.1
 MAX_VEL = 0.5
 
@@ -70,8 +69,8 @@ def main(
     """
     env = RobotChasingTargetEnv(
         render_mode="human" if not profile else None,
-        n_robots=10,
-        n_targets=3,
+        n_robots=15,
+        n_targets=4,
         robot_radius=ROBOT_RADIUS,
         max_velocity=MAX_VEL,
         target_velocity_std=MAX_VEL,
