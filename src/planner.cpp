@@ -273,6 +273,6 @@ PYBIND11_MODULE(_planner, m)
         .def(py::init<double, double, double>(), py::arg("agent_radius"), py::arg("dt"), py::arg("max_velocity"))
         .def("__call__", &Planner::operator());
 
-    m.def("inplaceMoveTargets", &inplaceMoveTargets, py::arg("targets"), py::arg("dt"), py::arg("limits"),
+    m.def("inplace_move_targets", &inplaceMoveTargets, py::arg("targets"), py::arg("dt"), py::arg("limits"),
         py::arg("n_steps"));
 }

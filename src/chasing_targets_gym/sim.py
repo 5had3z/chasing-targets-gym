@@ -7,7 +7,7 @@ import pygame
 from gymnasium import spaces
 
 from . import render_utils as ru
-from ._planner import inplaceMoveTargets
+from ._planner import inplace_move_targets
 from .robots import Robots
 
 
@@ -204,7 +204,7 @@ dimensions, default value is (-4., -3., 4., 3.)
 
     def _get_obs(self) -> dict[str, np.ndarray]:
         targets = self.targets.copy()
-        inplaceMoveTargets(
+        inplace_move_targets(
             targets, self.dt, self.field_limits, self.steps_ahead_to_plan
         )
 
@@ -277,7 +277,7 @@ dimensions, default value is (-4., -3., 4., 3.)
 
     def step(self, action: dict[str, np.ndarray]):
         assert self.action_space.contains(action)
-        inplaceMoveTargets(self.targets, self.dt, self.field_limits, 1)
+        inplace_move_targets(self.targets, self.dt, self.field_limits, 1)
 
         self.robots.step(action)
         # Robots can scrape against the border
