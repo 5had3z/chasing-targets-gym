@@ -8,6 +8,7 @@ from gymnasium import spaces
 
 from . import render_utils as ru
 from .robots import Robots
+from ._planner import inplaceMoveTargets
 
 
 class RobotChasingTargetEnv(gym.Env):
@@ -197,8 +198,9 @@ dimensions, default value is (-4., -3., 4., 3.)
 
     def _get_obs(self) -> dict[str, np.ndarray]:
         targets = self.targets.copy()
-        for _ in range(self.steps_ahead_to_plan):
-            self._move_targets(targets)
+        inplaceMoveTargets(
+            targets, self.dt, self.field_limits, self.steps_ahead_to_plan
+        )
 
         robot_est = self.robots.forecast(self.tau)
         for i in [0, 1]:
@@ -267,27 +269,10 @@ dimensions, default value is (-4., -3., 4., 3.)
 
         return self._get_obs(), self._info
 
-    def _move_targets(self, targets: np.ndarray) -> None:
-        targets[:, :2] += targets[:, 2:] * self.dt
-
-        # Flip velocity when hitting boundary and clip particle to boundary limit.
-        mask = targets[:, 0] < self.field_limits[0]
-        mask |= targets[:, 0] > self.field_limits[2]
-        targets[mask, 2] *= -1
-        np.clip(
-            targets[:, 0], self.field_limits[0], self.field_limits[2], targets[:, 0]
-        )
-
-        mask = targets[:, 1] < self.field_limits[1]
-        mask |= targets[:, 1] > self.field_limits[3]
-        targets[mask, 3] *= -1
-        np.clip(
-            targets[:, 1], self.field_limits[1], self.field_limits[3], targets[:, 1]
-        )
-
     def step(self, action: dict[str, np.ndarray]):
         assert self.action_space.contains(action)
-        self._move_targets(self.targets)
+        inplaceMoveTargets(self.targets, self.dt, self.field_limits, 1)
+
         self.robots.step(action)
         # Robots can scrape against the border
         np.clip(

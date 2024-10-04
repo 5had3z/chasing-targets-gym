@@ -206,9 +206,73 @@ private:
     float mTau;
 };
 
+struct Target
+{
+    float x;
+    float y;
+    float vx;
+    float vy;
+};
+
+struct Boundary
+{
+    float minX;
+    float minY;
+    float maxX;
+    float maxY;
+};
+
+void inplaceMoveTargets(py::array_t<float> targets, double dt, py::array_t<float> limits, int64_t nSteps)
+{
+    if (limits.ndim() != 1 && limits.shape(0) != 4)
+    {
+        throw std::runtime_error("Unexpected limits shape for inplaceMoveTargets");
+    }
+    if (targets.ndim() != 2 && targets.shape(1) != 4 && targets.strides(0) == 4 * sizeof(float))
+    {
+        throw std::runtime_error("Unexpected targets shape or stride for inplaceMoveTargets");
+    }
+
+    auto boundary = *reinterpret_cast<const Boundary*>(limits.data());
+    auto targetsView = targets.mutable_unchecked<2>();
+    for (std::size_t tIdx = 0; tIdx < targetsView.shape(0); ++tIdx)
+    {
+        auto target = reinterpret_cast<Target*>(targetsView.mutable_data(tIdx, 0));
+        for (std::size_t step = 0; step < nSteps; ++step)
+        {
+            target->x += target->vx * dt;
+            target->y += target->vy * dt;
+            if (target->x < boundary.minX)
+            {
+                target->x = boundary.minX;
+                target->vx *= -1;
+            }
+            else if (target->x > boundary.maxX)
+            {
+                target->x = boundary.maxX;
+                target->vx *= -1;
+            }
+
+            if (target->y < boundary.minY)
+            {
+                target->y = boundary.minY;
+                target->vy *= -1;
+            }
+            else if (target->y > boundary.maxY)
+            {
+                target->y = boundary.maxY;
+                target->vy *= -1;
+            }
+        }
+    }
+}
+
 PYBIND11_MODULE(_planner, m)
 {
     py::class_<Planner>(m, "Planner")
         .def(py::init<double, double, double>(), py::arg("agent_radius"), py::arg("dt"), py::arg("max_velocity"))
         .def("__call__", &Planner::operator());
+
+    m.def("inplaceMoveTargets", &inplaceMoveTargets, py::arg("targets"), py::arg("dt"), py::arg("limits"),
+        py::arg("n_steps"));
 }
