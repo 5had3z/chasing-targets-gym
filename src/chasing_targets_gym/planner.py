@@ -47,8 +47,7 @@ class Planner:
         sin_th = np.sin(theta)
         # First cover general motion case
         R = self.radius * (vR + vL) / (vR - vL + np.finfo(vR.dtype).eps)
-        dt = (vR - vL) / self.width
-        new_th = dt + theta
+        new_th = (vR - vL) / self.width + theta
         dx = R * (np.sin(new_th) - sin_th)
         dy = -R * (np.cos(new_th) - cos_th)
 
