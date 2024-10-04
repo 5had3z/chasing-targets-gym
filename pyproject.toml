@@ -8,8 +8,8 @@ where = ["src"]
 [tool.cibuildwheel]
 manylinux-x86_64-image = "manylinux_2_28"
 manylinux-aarch64-image = "manylinux_2_28"
-manylinux-pypy-x86_64-image = "manylinux_2_28"
-manylinux-pypy-aarch64-image = "manylinux_2_28"
+manylinux-pypy_x86_64-image = "manylinux_2_28"
+manylinux-pypy_aarch64-image = "manylinux_2_28"
 
 [project]
 name = "chasing_targets_gym"
