@@ -5,7 +5,9 @@ from typing import Annotated, Optional
 import numpy as np
 import typer
 
-from .planner import Planner
+from ._planner import Planner as CPPlanner
+
+from .py_planner import Planner as PYPlanner
 from .sim import RobotChasingTargetEnv
 
 
@@ -38,12 +40,28 @@ def pure_pursuit(obs: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
 
 def run_sim(env: RobotChasingTargetEnv, planner, max_step: int, seed: int):
     """Run stimulation until terminated/truncated or max_step"""
+    pyplanner = PYPlanner(
+        env.get_wrapper_attr("robot_radius"),
+        env.get_wrapper_attr("dt"),
+        env.get_wrapper_attr("max_velocity"),
+        use_batched=True,
+    )
+    bpyplanner = PYPlanner(
+        env.get_wrapper_attr("robot_radius"),
+        env.get_wrapper_attr("dt"),
+        env.get_wrapper_attr("max_velocity"),
+        use_batched=False,
+    )
+
     observation, _ = env.reset(seed=seed)
 
     steps = 0
     done = False
     while not done:
         action = planner(observation)
+        action_a = pyplanner(observation)
+        action_b = bpyplanner(observation)
+        assert all(np.allclose(action_a[k], action_b[k]) for k in action)
         observation, _, terminated, truncated, _ = env.step(action)
         if env.render_mode == "human":
             env.render()
@@ -81,7 +99,7 @@ def main(
     if use_pure_pursuit:
         planner = pure_pursuit
     else:
-        planner = Planner(
+        planner = CPPlanner(
             env.get_wrapper_attr("robot_radius"),
             env.get_wrapper_attr("dt"),
             env.get_wrapper_attr("max_velocity"),

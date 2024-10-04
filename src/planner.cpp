@@ -2,6 +2,8 @@
 #include <pybind11/pybind11.h>
 
 #include <algorithm>
+#include <format>
+#include <iostream>
 #include <ranges>
 #include <span>
 
@@ -22,8 +24,6 @@ struct Robot
     float dx;
     float dy;
     float dt;
-    float vL;
-    float vR;
 };
 
 using Robots = std::vector<Robot>;
@@ -38,17 +38,24 @@ struct Action
 
 using Actions = std::vector<Action>;
 using ActionsView = std::span<Action>;
+using ConstActionsView = std::span<const Action>;
 
 RobotsView asRobots(py::array_t<float> arr)
 {
-    RobotsView view(reinterpret_cast<Robot*>(arr.mutable_data()), static_cast<std::size_t>(arr.shape(0)));
-    return view;
+    if (arr.ndim() != 2 || arr.shape(1) != 6)
+    {
+        throw std::out_of_range("Expected Nx6 array for set of robots");
+    }
+    return RobotsView(reinterpret_cast<Robot*>(arr.mutable_data()), static_cast<std::size_t>(arr.shape(0)));
 }
 
 ConstRobotsView asConstRobots(py::array_t<float> arr)
 {
-    ConstRobotsView view(reinterpret_cast<const Robot*>(arr.data()), static_cast<std::size_t>(arr.shape(0)));
-    return view;
+    if (arr.ndim() != 2 || arr.shape(1) != 6)
+    {
+        throw std::out_of_range("Expected Nx6 array for set of robots");
+    }
+    return ConstRobotsView(reinterpret_cast<const Robot*>(arr.data()), static_cast<std::size_t>(arr.shape(0)));
 }
 
 class Planner
@@ -65,19 +72,23 @@ public:
         auto vLCurrent = obs["vL"].cast<py::array_t<float>>().unchecked<1>();
         auto vRCurrent = obs["vR"].cast<py::array_t<float>>().unchecked<1>();
 
-        auto robotsCurrent = asConstRobots(obs["robots"].cast<py::array_t<float>>());
+        auto robotsCurrent = asConstRobots(obs["current_robot"].cast<py::array_t<float>>());
         auto robotsFuture = asConstRobots(obs["future_robot"].cast<py::array_t<float>>());
-        auto futureTarget = obs["future_target"].cast<py::array_t<float>>().unchecked<2>();
-        const auto nRobots = robotsCurrent.size();
+        auto robotTargetIdx = obs["robot_target_idx"].cast<py::array_t<int64_t>>().unchecked<1>();
+        auto futureTargets = obs["future_target"].cast<py::array_t<float>>().unchecked<2>();
 
+        const auto nRobots = robotsCurrent.size();
         auto vLAction = py::array_t<float>(nRobots);
         auto vLResult = vLAction.mutable_unchecked<1>();
         auto vRAction = py::array_t<float>(nRobots);
         auto vRResult = vRAction.mutable_unchecked<1>();
         for (std::size_t rIdx = 0; rIdx < nRobots; ++rIdx)
         {
+            std::array<float, 2> futureTarget;
+            futureTarget[0] = futureTargets(robotTargetIdx[rIdx], 0);
+            futureTarget[1] = futureTargets(robotTargetIdx[rIdx], 1);
             std::tie(vLResult[rIdx], vRResult[rIdx])
-                = chooseAction(vLCurrent[rIdx], vRCurrent[rIdx], robotsCurrent, robotsFuture, futureTarget, rIdx);
+                = chooseAction(vLCurrent[rIdx], vRCurrent[rIdx], robotsCurrent[rIdx], robotsFuture, futureTarget, rIdx);
         }
 
         py::dict actions;
@@ -98,7 +109,7 @@ private:
         {
             for (auto R : dv)
             {
-                Action a{vL + L, vR + R};
+                Action a = {.vL = vL + L, .vR = vR + R};
                 if (-mMaxVel < a.vL && a.vL < mMaxVel && -mMaxVel < a.vR && a.vR < mMaxVel)
                 {
                     actions.emplace_back(std::move(a));
@@ -109,15 +120,15 @@ private:
         return actions;
     }
 
-    Robots predictPosition(ActionsView actions, const Robot& robot) const
+    Robots predictPosition(ConstActionsView actions, const Robot& robot) const
     {
-        Robots newRobotPos(actions.size(), robot);
+        Robots newRobots(actions.size(), robot);
         for (std::size_t idx = 0; idx < actions.size(); ++idx)
         {
             float dx, dy;
             const auto& action = actions[idx];
             const auto vDiff = action.vR - action.vL;
-            if (std::abs(vDiff) < 1e-3) // Straight motion
+            if (std::abs(vDiff) < 1e-3f) // Straight motion
             {
                 dx = action.vL * std::cos(robot.t);
                 dy = action.vL * std::sin(robot.t);
@@ -129,18 +140,68 @@ private:
                 dx = R * (std::sin(new_t) - std::sin(robot.t));
                 dy = -R * (std::cos(new_t) - std::cos(robot.t));
             }
-            newRobotPos[idx].x += mTau * dx;
-            newRobotPos[idx].y += mTau * dy;
+            newRobots[idx].x += mTau * dx;
+            newRobots[idx].y += mTau * dy;
         }
-        return newRobotPos;
+
+        return newRobots;
     }
 
-    std::pair<float, float> chooseAction(
-        float vL, float vR, ConstRobotsView robots, ConstRobotsView robotsFut, FloatArray2 target, std::size_t robotIdx)
+    float closestObstacleDistance(const Robot& robot, ConstRobotsView obstacles, std::size_t robotIdx)
     {
-        auto actions = makeActions(vL, vR);
-        auto newRobotPos = predictPosition(actions, robots[robotIdx]);
-        return {-1, -1};
+        float minDist = std::numeric_limits<float>::max();
+        for (std::size_t idx = 0; idx < obstacles.size(); ++idx)
+        {
+            if (idx == robotIdx)
+            {
+                continue;
+            }
+            const float dist
+                = std::sqrt(std::pow(obstacles[idx].x - robot.x, 2.f) + std::pow(obstacles[idx].y - robot.y, 2.f));
+            minDist = std::min(minDist, dist);
+        }
+        return minDist - mAgentRad * 2.f;
+    }
+
+    std::pair<float, float> chooseAction(float vL, float vR, const Robot& robot, ConstRobotsView robotsFut,
+        std::span<const float, 2> target, std::size_t robotIdx)
+    {
+        const auto actions = makeActions(vL, vR);
+        const auto newRobotPos = predictPosition(actions, robot);
+
+        auto targetDist = [&target](const Robot& r)
+        { return std::sqrt(std::pow(r.x - target[0], 2.f) + std::pow(r.y - target[1], 2.f)); };
+
+        const float prevTargetDist = targetDist(robot);
+        std::vector<float> distScore(newRobotPos.size());
+        std::ranges::transform(newRobotPos, distScore.begin(),
+            [&](const Robot& r) { return forward_weight * (prevTargetDist - targetDist(r)); });
+
+        std::vector<float> obstacleCost(newRobotPos.size());
+        std::ranges::transform(newRobotPos, obstacleCost.begin(),
+            [&](const Robot& r)
+            {
+                const float distanceToObstacle = closestObstacleDistance(r, robotsFut, robotIdx);
+                if (distanceToObstacle < mAgentRad)
+                {
+                    return obstacle_weight * (mAgentRad - distanceToObstacle);
+                }
+                return 0.f;
+            });
+
+        auto maxScore = std::numeric_limits<float>::lowest();
+        std::size_t argmax = 0;
+        for (std::size_t idx = 0; idx < actions.size(); ++idx)
+        {
+            const auto score = distScore[idx] - obstacleCost[idx];
+            if (score > maxScore)
+            {
+                argmax = idx;
+                maxScore = score;
+            }
+        }
+
+        return {actions[argmax].vL, actions[argmax].vR};
     }
 
     float mAgentRad;
@@ -151,5 +212,7 @@ private:
 
 PYBIND11_MODULE(_planner, m)
 {
-    py::class_<Planner>(m, "Planner").def(py::init<double, double, double>()).def("__call__", &Planner::operator());
+    py::class_<Planner>(m, "Planner")
+        .def(py::init<double, double, double>(), py::arg("agent_radius"), py::arg("dt"), py::arg("max_velocity"))
+        .def("__call__", &Planner::operator());
 }
