@@ -1,22 +1,19 @@
-name: Build
-
+name: Build Wheels
 on:
-    push:
-        tags:
-            - 'v*.*.*'
-
+  push:
+    tags:
+      - 'v*.*.*'
 jobs:
   build_wheels:
     runs-on: ubuntu-latest
-
+    permissions:
+        id-token: write
     strategy:
         matrix:
             python-version: ["3.10", "3.11", "3.12"]
-
     steps:
       - uses: actions/checkout@v4
 
-      # Used to host cibuildwheel
       - name: Setup Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
