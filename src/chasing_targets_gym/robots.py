@@ -124,18 +124,21 @@ class Robots:
         vR = self.vR
         vL = self.vL
 
+        dxdydt = np.empty([self.state.shape[0], 3], dtype=np.float32)
+
         # First cover general motion case
-        R = (self.radius * (vR + vL)) / (vR - vL + np.finfo(vR.dtype).eps)
-        dt = (vR - vL) / self.width
-        dx = R * (np.sin(dt + theta) - sin_th)
-        dy = -R * (np.cos(dt + theta) - cos_th)
+        vDiff = vR - vL
+        R = (self.radius * (vR + vL)) / (vDiff + np.finfo(vR.dtype).eps)
+        np.multiply(vDiff, 1 / self.width, dxdydt[:, 2])
+        np.multiply(R, (np.sin(dxdydt[:, 2] + theta) - sin_th), dxdydt[:, 0])
+        np.multiply(-R, (np.cos(dxdydt[:, 2] + theta) - cos_th), dxdydt[:, 1])
 
         # Then cover straight motion case
-        mask = np.abs(vL - vR) < 1e-3
-        dx[mask] = (vL * cos_th)[mask]
-        dy[mask] = (vL * sin_th)[mask]
+        mask = np.abs(vDiff) < 1e-3
+        dxdydt[mask, 0] = (vL * cos_th)[mask]
+        dxdydt[mask, 1] = (vL * sin_th)[mask]
 
-        return np.stack([dx, dy, dt], axis=-1)
+        return dxdydt
 
     def _prepare_trajectory_render(
         self, x: float, y: float, theta: float, vL: float, vR: float
