@@ -1,5 +1,7 @@
 """Example Planning Algorithm"""
 
+from typing_extensions import deprecated
+
 import numpy as np
 
 
@@ -12,6 +14,7 @@ def cartesian_product(*arrays):
     return arr.reshape(-1, la)
 
 
+@deprecated("C++ Native planner is 70x faster, use chasing_targets_gym.Planner")
 class Planner:
     """
     Basic planner from gym environment copied and refined from

@@ -26,6 +26,20 @@ struct Robot
     float dt;
 };
 
+struct RobotArrayView
+{
+    FloatArray2 _data;
+    const Robot& operator[](std::size_t idx) const noexcept
+    {
+        return *reinterpret_cast<const Robot*>(_data.data(idx, 0));
+    }
+
+    std::size_t size() const noexcept
+    {
+        return _data.shape(0);
+    }
+};
+
 using Robots = std::vector<Robot>;
 using RobotsView = std::span<Robot>;
 using ConstRobotsView = std::span<const Robot>;
@@ -39,24 +53,6 @@ struct Action
 using Actions = std::vector<Action>;
 using ActionsView = std::span<Action>;
 using ConstActionsView = std::span<const Action>;
-
-RobotsView asRobots(py::array_t<float> arr)
-{
-    if (arr.ndim() != 2 || arr.shape(1) != 6)
-    {
-        throw std::out_of_range("Expected Nx6 array for set of robots");
-    }
-    return RobotsView(reinterpret_cast<Robot*>(arr.mutable_data()), static_cast<std::size_t>(arr.shape(0)));
-}
-
-ConstRobotsView asConstRobots(py::array_t<float> arr)
-{
-    if (arr.ndim() != 2 || arr.shape(1) != 6)
-    {
-        throw std::out_of_range("Expected Nx6 array for set of robots");
-    }
-    return ConstRobotsView(reinterpret_cast<const Robot*>(arr.data()), static_cast<std::size_t>(arr.shape(0)));
-}
 
 class Planner
 {
@@ -72,8 +68,8 @@ public:
         auto vLCurrent = obs["vL"].cast<py::array_t<float>>().unchecked<1>();
         auto vRCurrent = obs["vR"].cast<py::array_t<float>>().unchecked<1>();
 
-        auto robotsCurrent = asConstRobots(obs["current_robot"].cast<py::array_t<float>>());
-        auto robotsFuture = asConstRobots(obs["future_robot"].cast<py::array_t<float>>());
+        auto robotsCurrent = RobotArrayView(obs["current_robot"].cast<py::array_t<float>>().unchecked<2>());
+        auto robotsFuture = RobotArrayView(obs["future_robot"].cast<py::array_t<float>>().unchecked<2>());
         auto robotTargetIdx = obs["robot_target_idx"].cast<py::array_t<int64_t>>().unchecked<1>();
         auto futureTargets = obs["future_target"].cast<py::array_t<float>>().unchecked<2>();
 
@@ -135,7 +131,7 @@ private:
             }
             else // Turning motion
             {
-                const auto R = mAgentRad * (action.vR + action.vL) / (vDiff + std::numeric_limits<float>::epsilon());
+                const auto R = mAgentRad * (action.vR + action.vL) / vDiff;
                 const auto new_t = vDiff / (mAgentRad * 2.f) + robot.t;
                 dx = R * (std::sin(new_t) - std::sin(robot.t));
                 dy = -R * (std::cos(new_t) - std::cos(robot.t));
@@ -147,7 +143,7 @@ private:
         return newRobots;
     }
 
-    float closestObstacleDistance(const Robot& robot, ConstRobotsView obstacles, std::size_t robotIdx)
+    float closestObstacleDistance(const Robot& robot, RobotArrayView obstacles, std::size_t robotIdx)
     {
         float minDist = std::numeric_limits<float>::max();
         for (std::size_t idx = 0; idx < obstacles.size(); ++idx)
@@ -163,7 +159,7 @@ private:
         return minDist - mAgentRad * 2.f;
     }
 
-    std::pair<float, float> chooseAction(float vL, float vR, const Robot& robot, ConstRobotsView robotsFut,
+    std::pair<float, float> chooseAction(float vL, float vR, const Robot& robot, RobotArrayView robotsFut,
         std::span<const float, 2> target, std::size_t robotIdx)
     {
         const auto actions = makeActions(vL, vR);

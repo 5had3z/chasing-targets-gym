@@ -365,7 +365,7 @@ dimensions, default value is (-4., -3., 4., 3.)
 
     def render(self) -> np.ndarray | None:
         if self.render_mode is None:
-            return
+            return None
 
         if self.window is None and self.render_mode == "human":
             pygame.init()
@@ -391,6 +391,7 @@ dimensions, default value is (-4., -3., 4., 3.)
             return np.transpose(
                 np.array(pygame.surfarray.pixels3d(canvas)), axes=(1, 0, 2)
             )
+        return None
 
     def close(self):
         if self.window is not None:
