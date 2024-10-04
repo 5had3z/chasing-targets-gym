@@ -1,6 +1,7 @@
 """Example Planning Algorithm"""
 
 import numpy as np
+from typing_extensions import deprecated
 
 
 def cartesian_product(*arrays):
@@ -12,6 +13,7 @@ def cartesian_product(*arrays):
     return arr.reshape(-1, la)
 
 
+@deprecated("C++ Native planner is 70x faster, use chasing_targets_gym.Planner")
 class Planner:
     """
     Basic planner from gym environment copied and refined from
@@ -23,13 +25,20 @@ class Planner:
     obstacle_weight = 6666
     max_acceleration = 0.4
 
-    def __init__(self, agent_radius: float, dt: float, max_velocity: float) -> None:
+    def __init__(
+        self,
+        agent_radius: float,
+        dt: float,
+        max_velocity: float,
+        use_batched: bool = True,
+    ) -> None:
         self.radius = agent_radius
         self.safe_dist = agent_radius
         self.max_velocity = max_velocity
         dv = self.max_acceleration * dt
         self.dv = np.array([-dv, 0, dv], dtype=np.float32)
         self.tau = dt * self.plan_ahead_steps
+        self.use_batched = use_batched
 
     @property
     def width(self) -> float:
@@ -47,8 +56,7 @@ class Planner:
         sin_th = np.sin(theta)
         # First cover general motion case
         R = self.radius * (vR + vL) / (vR - vL + np.finfo(vR.dtype).eps)
-        dt = (vR - vL) / self.width
-        new_th = dt + theta
+        new_th = (vR - vL) / self.width + theta
         dx = R * (np.sin(new_th) - sin_th)
         dy = -R * (np.cos(new_th) - cos_th)
 
@@ -124,8 +132,8 @@ class Planner:
         tgt_future = obs["future_target"][obs["robot_target_idx"], :2]
         for r_idx in range(n_robot):
             action = self.choose_action(
-                obs["vL"][r_idx, 0],
-                obs["vR"][r_idx, 0],
+                obs["vL"][r_idx],
+                obs["vR"][r_idx],
                 obs["current_robot"][r_idx, :3],
                 tgt_future[r_idx],
                 np.delete(obs["future_robot"][:, :2], r_idx, axis=0),
@@ -207,4 +215,6 @@ class Planner:
             for k, v in obs.items()
         }
 
-        return self.run_batched(obs)
+        if self.use_batched:
+            return self.run_batched(obs)
+        return self.run_iterative(obs)

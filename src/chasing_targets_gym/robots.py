@@ -13,18 +13,30 @@ class Robots:
     _ax_lbl = ["x", "y", "t", "dx", "dy", "dt", "vL", "vR"]
     _l2i = {l: i for i, l in enumerate(_ax_lbl)}
 
-    def __init__(self, n_robots: int, radius: float, dt: float, accel_limit: float):
+    def __init__(
+        self,
+        n_robots: int,
+        radius: float,
+        dt: float,
+        accel_limit: float,
+        enable_history: bool,
+    ):
         self.state = np.zeros((n_robots, 8), dtype=np.float32)
         self.accel_limit = accel_limit
         self.dt = dt
         self.radius = radius
-        self.history = [deque() for _ in range(n_robots)]
+        if enable_history:
+            self.history = [deque() for _ in range(n_robots)]
+        else:
+            self.history = None
 
     def __len__(self):
         return self.state.shape[0]
 
     def reset(self):
         self.state.fill(0)
+        if self.history is None:
+            return
         for h in self.history:
             h.clear()
 
@@ -82,10 +94,11 @@ class Robots:
     def step(self, action: dict[str, np.ndarray]) -> None:
         """Perform control action"""
         # Add state history
-        for rhist, state in zip(self.history, self.state):
-            rhist.append(tuple(state[:2]))
-            if len(rhist) > 10:
-                rhist.popleft()
+        if self.history is not None:
+            for rhist, state in zip(self.history, self.state):
+                rhist.append(tuple(state[:2]))
+                if len(rhist) > 10:
+                    rhist.popleft()
 
         # Update intended control inputs
         max_dv = self.accel_limit * self.dt
@@ -124,18 +137,21 @@ class Robots:
         vR = self.vR
         vL = self.vL
 
+        dxdydt = np.empty([self.state.shape[0], 3], dtype=np.float32)
+
         # First cover general motion case
-        R = (self.radius * (vR + vL)) / (vR - vL + np.finfo(vR.dtype).eps)
-        dt = (vR - vL) / self.width
-        dx = R * (np.sin(dt + theta) - sin_th)
-        dy = -R * (np.cos(dt + theta) - cos_th)
+        vDiff = vR - vL
+        R = (self.radius * (vR + vL)) / (vDiff + np.finfo(vR.dtype).eps)
+        np.multiply(vDiff, 1 / self.width, dxdydt[:, 2])
+        np.multiply(R, (np.sin(dxdydt[:, 2] + theta) - sin_th), dxdydt[:, 0])
+        np.multiply(-R, (np.cos(dxdydt[:, 2] + theta) - cos_th), dxdydt[:, 1])
 
         # Then cover straight motion case
-        mask = np.abs(vL - vR) < 1e-3
-        dx[mask] = (vL * cos_th)[mask]
-        dy[mask] = (vL * sin_th)[mask]
+        mask = np.abs(vDiff) < 1e-3
+        dxdydt[mask, 0] = (vL * cos_th)[mask]
+        dxdydt[mask, 1] = (vL * sin_th)[mask]
 
-        return np.stack([dx, dy, dt], axis=-1)
+        return dxdydt
 
     def _prepare_trajectory_render(
         self, x: float, y: float, theta: float, vL: float, vR: float
@@ -200,9 +216,10 @@ class Robots:
 
     def draw(self, screen: pygame.Surface, wheel_blob: float):
         """Draw robots on screen"""
-        for history in self.history:
-            for pos in history:
-                pygame.draw.circle(screen, ru.grey, ru.to_display(*pos), 3, 0)
+        if self.history is not None:
+            for history in self.history:
+                for pos in history:
+                    pygame.draw.circle(screen, ru.grey, ru.to_display(*pos), 3, 0)
 
         for robot in self.state:
             self._draw(screen, wheel_blob, robot)

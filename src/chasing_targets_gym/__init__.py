@@ -1,9 +1,8 @@
-__version__ = "0.0.7"
-
 from gymnasium.envs.registration import register
 
-from .sim import RobotChasingTargetEnv
+from ._planner import Planner
 from .run import _main
+from .sim import RobotChasingTargetEnv
 
 register(
     id="ChasingTargets-v0",

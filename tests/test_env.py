@@ -2,7 +2,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from gymnasium import make, Env
+from gymnasium import Env, make
 
 import chasing_targets_gym
 
