@@ -1,6 +1,13 @@
 from gymnasium.envs.registration import register
 
-from ._planner import Planner
+try:
+    from ._planner import Planner
+except ImportError:
+    from warnings import warn
+
+    warn("Unable to import C++ planner, using python native planner")
+    from .py_planner import Planner
+
 from .run import _main
 from .sim import RobotChasingTargetEnv
 

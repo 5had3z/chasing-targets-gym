@@ -18,6 +18,13 @@ def test_cpp_py_planners():
         env.get_wrapper_attr("robot_radius"),
         env.get_wrapper_attr("dt"),
         env.get_wrapper_attr("max_velocity"),
+        use_batched=False,
+    )
+    bpylanner = py_planner.Planner(
+        env.get_wrapper_attr("robot_radius"),
+        env.get_wrapper_attr("dt"),
+        env.get_wrapper_attr("max_velocity"),
+        use_batched=True,
     )
     cpplanner = _planner.Planner(
         env.get_wrapper_attr("robot_radius"),
@@ -29,7 +36,9 @@ def test_cpp_py_planners():
     done = False
     while not done:
         p_action = pylanner(observation)
+        b_action = bpylanner(observation)
         c_action = cpplanner(observation)
-        assert all(np.allclose(p_action[k], c_action[k]) for k in p_action)
-        observation, _, terminated, truncated, _ = env.step(p_action)
+        assert all(np.allclose(b_action[k], p_action[k]) for k in c_action)
+        assert all(np.allclose(p_action[k], c_action[k]) for k in c_action)
+        observation, _, terminated, truncated, _ = env.step(c_action)
         done = terminated or truncated

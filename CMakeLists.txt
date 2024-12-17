@@ -10,5 +10,6 @@ find_package(pybind11 CONFIG REQUIRED)
 python_add_library(_planner MODULE src/planner.cpp WITH_SOABI)
 target_link_libraries(_planner PRIVATE pybind11::headers)
 target_compile_features(_planner PRIVATE cxx_std_20)
+target_compile_options(_planner PRIVATE -fvisibility=hidden)
 
 install(TARGETS _planner DESTINATION chasing_targets_gym)

@@ -7,10 +7,10 @@ from typing_extensions import deprecated
 def cartesian_product(*arrays):
     """Cartesian product of numpy arrays"""
     la = len(arrays)
-    arr = np.empty([len(a) for a in arrays] + [la], dtype=np.result_type(*arrays))
+    arr = np.empty([la] + [len(a) for a in arrays], dtype=np.result_type(*arrays))
     for i, a in enumerate(np.ix_(*arrays)):
-        arr[..., i] = a
-    return arr.reshape(-1, la)
+        arr[i] = a
+    return arr.reshape(la, -1)
 
 
 @deprecated("C++ Native planner is 70x faster, use chasing_targets_gym.Planner")
@@ -33,7 +33,6 @@ class Planner:
         use_batched: bool = True,
     ) -> None:
         self.radius = agent_radius
-        self.safe_dist = agent_radius
         self.max_velocity = max_velocity
         dv = self.max_acceleration * dt
         self.dv = np.array([-dv, 0, dv], dtype=np.float32)
@@ -51,7 +50,7 @@ class Planner:
         Also returns path. This is just used for graphics, and returns some complicated stuff
         used to draw the possible paths during planning. Don't worry about the details of that.
         """
-        theta = robot[..., 2, None]
+        theta = robot[2, None]
         cos_th = np.cos(theta)
         sin_th = np.sin(theta)
         # First cover general motion case
@@ -66,18 +65,16 @@ class Planner:
         dx[mask] = (vL * cos_th)[mask]
         dy[mask] = (vL * sin_th)[mask]
 
-        if robot.ndim == 2:  # Add extra dim when batched for broadcast
-            robot = robot[:, None]
-        return robot[..., :2] + self.tau * np.stack((dx, dy), axis=-1)
+        return robot[:2, None] + self.tau * np.stack((dx, dy), axis=0)
 
     def closest_obstacle_distance(self, robot, obstacle):
         """
         Calculates the closest obstacle at a position (x, y). Used during planning.
         """
         pairwise_distance = np.linalg.norm(
-            robot[..., None, :] - obstacle[..., None, :, :], 2, axis=-1
+            robot[:, None] - obstacle[:, :, None], 2, axis=0
         )
-        return np.min(pairwise_distance, axis=-1) - self.width
+        return np.min(pairwise_distance, axis=0)
 
     def choose_action(
         self,
@@ -96,14 +93,14 @@ class Planner:
         # Range of possible motions: each of vL and vR could go up or down a bit
         actions = cartesian_product(vL + self.dv, vR + self.dv)
         # Remove invalid actions
-        actions = actions[np.all(np.abs(actions) < self.max_velocity, axis=-1)]
+        actions = actions[:, np.all(np.abs(actions) < self.max_velocity, axis=0)]
 
         # Predict new position in TAU seconds
-        new_robot_pos = self.predict_position(actions[:, 0], actions[:, 1], robot)
+        new_robot_pos = self.predict_position(actions[0], actions[1], robot)
 
         # Calculate how much close we've moved to target location
         previousTargetDistance = np.linalg.norm(robot[:2] - target, 2)
-        newTargetDistance = np.linalg.norm(new_robot_pos - target, 2, axis=1)
+        newTargetDistance = np.linalg.norm(new_robot_pos - target[:, None], 2, axis=0)
         distanceForward = previousTargetDistance - newTargetDistance
 
         # Positive benefit
@@ -113,15 +110,15 @@ class Planner:
         distanceToObstacle = self.closest_obstacle_distance(new_robot_pos, obstacle)
         obstacleCost = (
             self.obstacle_weight
-            * (self.safe_dist - distanceToObstacle)
-            * (distanceToObstacle < self.safe_dist)
+            * (4 * self.radius - distanceToObstacle)
+            * (distanceToObstacle < 4 * self.radius)
         )
 
         # Total benefit function to optimise
         benefit = distanceBenefit - obstacleCost
 
         # Select the best action's values
-        vLchosen, vRchosen = actions[np.argmax(benefit)]
+        vLchosen, vRchosen = actions[:, np.argmax(benefit)]
 
         return {"vL": vLchosen, "vR": vRchosen}
 
@@ -129,14 +126,14 @@ class Planner:
         """Run old iterative algorithm"""
         n_robot = obs["vL"].shape[0]
         actions = {k: np.empty(n_robot, dtype=np.float32) for k in ["vL", "vR"]}
-        tgt_future = obs["future_target"][obs["robot_target_idx"], :2]
+        tgt_future = obs["future_target"][:2, obs["robot_target_idx"]]
         for r_idx in range(n_robot):
             action = self.choose_action(
                 obs["vL"][r_idx],
                 obs["vR"][r_idx],
-                obs["current_robot"][r_idx, :3],
-                tgt_future[r_idx],
-                np.delete(obs["future_robot"][:, :2], r_idx, axis=0),
+                obs["current_robot"][:3, r_idx],
+                tgt_future[:, r_idx],
+                np.delete(obs["future_robot"][:2], r_idx, axis=1),
             )
             for k in ["vL", "vR"]:
                 actions[k][r_idx] = action[k]
@@ -153,16 +150,17 @@ class Planner:
     ):
         """Run algorithm batched, trading memory for speed"""
         actions = np.stack(
-            [cartesian_product(l + self.dv, r + self.dv) for l, r in zip(vL, vR)]
+            [cartesian_product(l + self.dv, r + self.dv) for l, r in zip(vL, vR)],
+            axis=-1,
         )
 
         # Predict new position in TAU seconds
-        new_robot_pos = self.predict_position(actions[..., 0], actions[..., 1], robot)
+        new_robot_pos = self.predict_position(actions[0], actions[1], robot)
 
         # Calculate how much close we've moved to target location
-        previousTargetDistance = np.linalg.norm(robot[..., :2] - target, 2, axis=-1)
-        newTargetDistance = np.linalg.norm(new_robot_pos - target[:, None], 2, axis=-1)
-        distanceForward = previousTargetDistance[:, None] - newTargetDistance
+        previousTargetDistance = np.linalg.norm(robot[:2] - target, 2, axis=0)
+        newTargetDistance = np.linalg.norm(new_robot_pos - target[:, None], 2, axis=0)
+        distanceForward = previousTargetDistance[None] - newTargetDistance
 
         # Positive benefit
         distanceBenefit = self.forward_weight * distanceForward
@@ -171,21 +169,21 @@ class Planner:
         distanceToObstacle = self.closest_obstacle_distance(new_robot_pos, obstacle)
         obstacleCost = (
             self.obstacle_weight
-            * (self.safe_dist - distanceToObstacle)
-            * (distanceToObstacle < self.safe_dist)
+            * (4 * self.radius - distanceToObstacle)
+            * (distanceToObstacle < 4 * self.radius)
         )
 
         # Total benefit function to optimise
         benefit = distanceBenefit - obstacleCost
-        invalid = np.any(np.abs(actions) > self.max_velocity, axis=-1)
+        invalid = np.any(np.abs(actions) > self.max_velocity, axis=0)
         benefit[invalid] = -np.inf
 
         # Select the best action's values, not sure why np.take is misbehaving, loop instead
         vLchosen, vRchosen = [], []
-        selects = np.argmax(benefit, axis=-1)
-        for action, select in zip(actions, selects):
-            vLchosen.append(action[select, 0])
-            vRchosen.append(action[select, 1])
+        selects = np.argmax(benefit, axis=0)
+        for i, select in enumerate(selects):
+            vLchosen.append(actions[0, select, i])
+            vRchosen.append(actions[1, select, i])
 
         return {"vL": np.array(vLchosen), "vR": np.array(vRchosen)}
 
@@ -193,14 +191,14 @@ class Planner:
         """Run entire algorithm batched"""
         n_robot = obs["vL"].shape[0]
         obstacles = np.stack(
-            [np.delete(obs["future_robot"][:, :2], i, axis=0) for i in range(n_robot)]
+            [np.delete(obs["future_robot"][:2], i, axis=1) for i in range(n_robot)],
+            axis=-1,
         )
-        actions = {k: np.empty((n_robot, 1), dtype=np.float32) for k in ["vL", "vR"]}
-        tgt_future = obs["future_target"][obs["robot_target_idx"], :2]
+        tgt_future = obs["future_target"][:2, obs["robot_target_idx"]]
         actions = self.choose_action_batched(
             obs["vL"],
             obs["vR"],
-            obs["current_robot"][:, :3],
+            obs["current_robot"][:3],
             tgt_future,
             obstacles,
         )

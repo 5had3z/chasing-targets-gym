@@ -1,3 +1,4 @@
+from collections import deque
 from pathlib import Path
 from typing import Any
 
@@ -6,7 +7,7 @@ import numpy as np
 import pygame
 from gymnasium import spaces
 
-from . import render_utils as ru
+from . import render as ru
 from ._planner import inplace_move_targets
 from .robots import Robots
 
@@ -66,14 +67,9 @@ dimensions, default value is (-4., -3., 4., 3.)
         recording_path: Path | None = None,
         sandbox_dimensions: tuple[float, float, float, float] | None = None,
     ):
-        self.robots = Robots(
-            n_robots,
-            robot_radius,
-            dt,
-            max_acceleration,
-            enable_history=render_mode is not None,
-        )
-        self.targets = np.empty((n_targets, 4), dtype=self._f_dtype)
+        self.robots = Robots(n_robots, robot_radius, dt, max_acceleration)
+        self.robots_history = None if render_mode is None else deque(maxlen=10)
+        self.targets = np.empty((4, n_targets), dtype=self._f_dtype)
         self.target_idxs = np.empty(n_robots, dtype=np.int64)
         self.dt = dt
         self.steps_ahead_to_plan = steps_ahead_to_plan
@@ -96,7 +92,7 @@ dimensions, default value is (-4., -3., 4., 3.)
         self.recorder = (
             None
             if recording_path is None
-            else ru.PyGameRecorder(recording_path, ru.size, self.metadata["render_fps"])
+            else ru.PyGameRecorder(recording_path, ru.SIZE, self.metadata["render_fps"])
         )
 
         self.render_mode = render_mode
@@ -126,9 +122,9 @@ dimensions, default value is (-4., -3., 4., 3.)
         max_limit = list(self.field_limits[2:])
 
         target_min = np.array(min_limit + [-max_velocity] * 2, dtype=self._f_dtype)
-        target_min = np.repeat(target_min[None], n_targets, axis=0)
+        target_min = np.repeat(target_min[:, None], n_targets, axis=-1)
         target_max = np.array(max_limit + [max_velocity] * 2, dtype=self._f_dtype)
-        target_max = np.repeat(target_max[None], n_targets, axis=0)
+        target_max = np.repeat(target_max[:, None], n_targets, axis=-1)
 
         robot_min = np.array(
             min_limit
@@ -137,7 +133,7 @@ dimensions, default value is (-4., -3., 4., 3.)
             + [-self.max_velocity / robot_radius],
             dtype=self._f_dtype,
         )
-        robot_min = np.repeat(robot_min[None], n_robots, axis=0)
+        robot_min = np.repeat(robot_min[:, None], n_robots, axis=-1)
         robot_max = np.array(
             max_limit
             + [np.pi]
@@ -145,7 +141,7 @@ dimensions, default value is (-4., -3., 4., 3.)
             + [self.max_velocity / robot_radius],
             dtype=self._f_dtype,
         )
-        robot_max = np.repeat(robot_max[None], n_robots, axis=0)
+        robot_max = np.repeat(robot_max[:, None], n_robots, axis=-1)
 
         self.observation_space = spaces.Dict(
             {
@@ -184,7 +180,7 @@ dimensions, default value is (-4., -3., 4., 3.)
 
     @property
     def n_targets(self) -> int:
-        return self.targets.shape[0]
+        return self.targets.shape[1]
 
     @property
     def n_robots(self) -> int:
@@ -211,16 +207,16 @@ dimensions, default value is (-4., -3., 4., 3.)
         robot_est = self.robots.forecast(self.tau)
         for i in [0, 1]:
             np.clip(
-                robot_est[:, i],
+                robot_est[i],
                 self.field_limits[i],
                 self.field_limits[i + 2],
-                robot_est[:, i],
+                robot_est[i],
             )
 
         obs = {
             "vR": self.robots.vR,
             "vL": self.robots.vL,
-            "current_robot": self.robots.state[:, :6],
+            "current_robot": self.robots.state[:6],
             "future_robot": robot_est,
             "current_target": self.targets,
             "future_target": targets,
@@ -238,18 +234,18 @@ dimensions, default value is (-4., -3., 4., 3.)
         super().reset(seed=seed)
 
         # Setup random target states
-        self.targets[:, 0] = self.np_random.uniform(
+        self.targets[0] = self.np_random.uniform(
             self.field_limits[0], self.field_limits[2], self.n_targets
         ).astype(self._f_dtype)
-        self.targets[:, 1] = self.np_random.uniform(
+        self.targets[1] = self.np_random.uniform(
             self.field_limits[1], self.field_limits[3], self.n_targets
         ).astype(self._f_dtype)
-        self.targets[:, 2] = (
+        self.targets[2] = (
             self.np_random.normal(0.0, self.target_velocity_std, self.n_targets)
             .clip(-self.max_velocity, self.max_velocity)
             .astype(self._f_dtype)
         )
-        self.targets[:, 3] = (
+        self.targets[3] = (
             self.np_random.normal(0.0, self.target_velocity_std, self.n_targets)
             .clip(-self.max_velocity, self.max_velocity)
             .astype(self._f_dtype)
@@ -272,12 +268,16 @@ dimensions, default value is (-4., -3., 4., 3.)
         # Reset display markers
         self.collision_markers.clear()
         self.reward_markers.clear()
+        if self.robots_history is not None:
+            self.robots_history.clear()
 
         return self._get_obs(), self._info
 
     def step(self, action: dict[str, np.ndarray]):
         assert self.action_space.contains(action)
         inplace_move_targets(self.targets, self.dt, self.field_limits, 1)
+        if self.robots_history is not None:
+            self.robots_history.append(self.robots.state[:2])
 
         self.robots.step(action)
         # Robots can scrape against the border
@@ -290,9 +290,9 @@ dimensions, default value is (-4., -3., 4., 3.)
 
         robot_collisions: np.ndarray[bool] = (
             np.linalg.norm(
-                self.robots.state[:, None, :2] - self.robots.state[None, :, :2],
+                self.robots.state[:2, None, :] - self.robots.state[:2, :, None],
                 2,
-                axis=-1,
+                axis=0,
             )
             < self.robot_width
         )
@@ -303,9 +303,7 @@ dimensions, default value is (-4., -3., 4., 3.)
 
         target_collisions: np.ndarray[bool] = (
             np.linalg.norm(
-                self.robots.state[:, :2] - self.targets[self.target_idxs, :2],
-                2,
-                axis=-1,
+                self.robots.state[:2] - self.targets[:2, self.target_idxs], 2, axis=0
             )
             < self.robot_width
         )
@@ -315,13 +313,13 @@ dimensions, default value is (-4., -3., 4., 3.)
             for coord in np.argwhere(robot_collisions):
                 if coord[0] == coord[1]:
                     continue
-                rob_a = self.robots.state[coord[0], :2]
-                rob_b = self.robots.state[coord[1], :2]
+                rob_a = self.robots.state[:2, coord[0]]
+                rob_b = self.robots.state[:2, coord[1]]
                 mean_coord = (rob_a + rob_b) * 0.5
                 self.collision_markers.append(ru.DecayingMarker(mean_coord.flatten()))
             for idx in np.argwhere(target_collisions):
-                rob = self.robots.state[idx, :2]
-                tgt = self.targets[self.target_idxs[idx], :2]
+                rob = self.robots.state[:2, idx]
+                tgt = self.targets[:2, self.target_idxs[idx]]
                 mean_coord = (rob + tgt) * 0.5
                 self.reward_markers.append(ru.DecayingMarker(mean_coord.flatten()))
 
@@ -334,12 +332,12 @@ dimensions, default value is (-4., -3., 4., 3.)
         return self._get_obs(), reward, False, False, self._info
 
     def _draw_targets(self, screen: pygame.Surface):
-        for target in self.targets:
+        for target in self.targets[:2].T:
             pygame.draw.circle(
                 screen,
-                ru.lightblue,
-                ru.to_display(*target[:2]),
-                int(ru.k * self.robot_radius),
+                ru.LIGHTBLUE,
+                ru.to_display(*target),
+                int(ru.K * self.robot_radius),
                 0,
             )
 
@@ -347,18 +345,19 @@ dimensions, default value is (-4., -3., 4., 3.)
         for collision in self.collision_markers:
             pygame.draw.circle(
                 screen,
-                ru.red,
+                ru.RED,
                 ru.to_display(*collision.position),
-                int(ru.k * self.robot_radius) // 2,
+                int(ru.K * self.robot_radius) // 2,
                 0,
             )
+
         self.collision_markers = [m for m in self.collision_markers if not m.expired()]
         for reward in self.reward_markers:
             pygame.draw.circle(
                 screen,
-                ru.green,
+                ru.GREEN,
                 ru.to_display(*reward.position),
-                int(ru.k * self.robot_radius) // 2,
+                int(ru.K * self.robot_radius) // 2,
                 0,
             )
         self.reward_markers = [m for m in self.reward_markers if not m.expired()]
@@ -370,13 +369,13 @@ dimensions, default value is (-4., -3., 4., 3.)
         if self.window is None and self.render_mode == "human":
             pygame.init()
             pygame.display.init()
-            self.window = pygame.display.set_mode(ru.size)
+            self.window = pygame.display.set_mode(ru.SIZE)
 
-        canvas = pygame.Surface(ru.size)
-        canvas.fill(ru.black)
+        canvas = pygame.Surface(ru.SIZE)
+        canvas.fill(ru.BLACK)
 
         self._draw_targets(canvas)
-        self.robots.draw(canvas, self.wheel_blob)
+        ru.draw_robots(canvas, self.wheel_blob, self.robots)
         self._draw_event_markers(canvas)
 
         if self.recorder is not None:
