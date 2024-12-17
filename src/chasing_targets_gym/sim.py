@@ -8,8 +8,9 @@ import pygame
 from gymnasium import spaces
 
 from . import render as ru
-from ._planner import inplace_move_targets
-from .robots import Robots
+from ._planner import inplace_move_targets, Robots
+
+# from .robots import Robots
 
 
 class RobotChasingTargetEnv(gym.Env):

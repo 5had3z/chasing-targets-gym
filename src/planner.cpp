@@ -1,8 +1,10 @@
 #include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
+#include <pybind11/stl.h>
 
 #include <algorithm>
 #include <iostream>
+#include <numbers>
 #include <ranges>
 #include <span>
 
@@ -75,10 +77,6 @@ private:
         return std::span(_data.data(index, 0), this->n_robots());
     }
 };
-
-using Robots = std::vector<Robot>;
-using RobotsView = std::span<Robot>;
-using ConstRobotsView = std::span<const Robot>;
 
 struct Action
 {
@@ -164,7 +162,7 @@ private:
         return actions;
     }
 
-    std::vector<Pos> predictPosition(ConstActionsView actions, const Robot& robot) const
+    std::vector<Pos> nextPosition(ConstActionsView actions, const Robot& robot) const
     {
         std::vector<Pos> newRobots(actions.size());
         std::ranges::transform(actions, newRobots.begin(),
@@ -202,7 +200,7 @@ private:
         std::span<const float, 2> target, std::size_t robotIdx)
     {
         const auto actions = makeActions(vL, vR);
-        const auto newRobotPos = predictPosition(actions, robot);
+        const auto newRobotPos = nextPosition(actions, robot);
 
         auto targetDist = [&target](const Pos& p) { return l2_distance(p.x - target[0], p.y - target[1]); };
 
@@ -316,11 +314,208 @@ void inplaceMoveTargets(py::array_t<float> targets, double dt, py::array_t<float
         std::span(targetsView.mutable_data(3, 0), nTargets), dt, boundary.minY, boundary.maxY, nSteps);
 }
 
+[[nodiscard]] constexpr auto wrapAngle(float th) noexcept -> float
+{
+    const auto pi = std::numbers::pi_v<float>;
+    if (th > pi)
+    {
+        th -= 2 * pi;
+    }
+    else if (th < -pi)
+    {
+        th += 2 * pi;
+    }
+    return th;
+}
+
+enum class ChannelName
+{
+    x = 0,
+    y = 1,
+    t = 2,
+    dx = 3,
+    dy = 4,
+    dt = 5,
+    vL = 6,
+    vR = 7
+};
+
+class Robots
+{
+public:
+    float mMaxDv;
+    float mDt;
+    float mRadius;
+    py::array_t<float> mRobots;
+
+    Robots(int64_t n_robots, double radius, double dt, double accel_limit)
+        : mMaxDv(static_cast<float>(accel_limit * dt))
+        , mDt(static_cast<float>(dt))
+        , mRadius(static_cast<float>(radius))
+        , mRobots({py::ssize_t(8), py::ssize_t(n_robots)})
+    {
+    }
+
+    void reset() noexcept
+    {
+        std::ranges::fill(mRobots.mutable_data(0, 0), mRobots.mutable_data(7, this->size() - 1), 0.f);
+    }
+
+    [[nodiscard]] auto size() const noexcept -> py::ssize_t
+    {
+        return mRobots.shape(1);
+    }
+
+    void step(py::dict actions)
+    {
+        auto updateMotor = [&](const std::string& key, ChannelName ch)
+        {
+            auto newRef = actions[key.c_str()].cast<py::array_t<float>>().unchecked<1>();
+            auto motor = this->view_ch(ch);
+            auto updateClipChange
+                = [&](float old_, float new_) { return std::clamp(new_, old_ - mMaxDv, old_ + mMaxDv); };
+            std::transform(motor.begin(), motor.end(), newRef.data(0), motor.begin(), updateClipChange);
+        };
+
+        updateMotor("vL", ChannelName::vL);
+        updateMotor("vR", ChannelName::vR);
+
+        // Calculate rate of change
+        auto dxdydt = this->calculate_velocity();
+
+        // Update state
+        auto updateState = [&](ChannelName ch)
+        {
+            auto x = this->view_ch(ch);
+            std::transform(x.begin(), x.end(), dxdydt.unchecked<2>().data(static_cast<int>(ch), 0), x.begin(),
+                [&](float _x, float _dx) { return _x + mDt * _dx; });
+        };
+        updateState(ChannelName::x);
+        updateState(ChannelName::y);
+        updateState(ChannelName::t);
+        auto t = this->view_ch(ChannelName::t);
+        std::transform(t.begin(), t.end(), t.begin(), wrapAngle);
+        std::memcpy(mRobots.mutable_data(3, 0), dxdydt.data(0, 0), dxdydt.size() * sizeof(float));
+    }
+
+    [[nodiscard]] auto forecast(std::optional<double> dt) -> py::array_t<float>
+    {
+        if (!dt.has_value())
+        {
+            dt = mDt;
+        }
+        // Calculate rate of change
+        auto dxdydt = this->calculate_velocity();
+        py::array_t<float> pred({py::ssize_t_cast(6), this->size()});
+
+        // Update state
+        auto calculateState = [&](ChannelName ch)
+        {
+            auto x = this->view_ch(ch);
+            std::transform(x.begin(), x.end(), dxdydt.unchecked<2>().data(static_cast<int>(ch), 0),
+                pred.mutable_unchecked<2>().mutable_data(static_cast<int>(ch), 0),
+                [&](float _x, float _dx) { return _x + dt.value() * _dx; });
+        };
+        calculateState(ChannelName::x);
+        calculateState(ChannelName::y);
+        calculateState(ChannelName::t);
+        auto t = std::span(pred.mutable_data(2, 0), this->size());
+        std::transform(t.begin(), t.end(), t.begin(), wrapAngle);
+
+        return pred;
+    }
+
+    [[nodiscard]] auto getArray(ChannelName ch) const noexcept -> py::array_t<float>
+    {
+        py::array_t<float> result({this->size()});
+        std::memcpy(result.mutable_data(0), this->view_ch(ch).data(), this->size() * sizeof(float));
+        return result;
+    }
+
+    void setArray(ChannelName ch, py::array_t<float> data)
+    {
+        std::memcpy(this->view_ch(ch).data(), data.data(0), data.size() * sizeof(float));
+    }
+
+private:
+    [[nodiscard]] auto calculate_velocity() -> py::array_t<float>
+    {
+        auto theta = view_ch(ChannelName::t);
+        auto vL = view_ch(ChannelName::vL);
+        auto vR = view_ch(ChannelName::vR);
+        std::vector<float> vDiff(this->size());
+        std::transform(vR.begin(), vR.end(), vL.begin(), vDiff.begin(), std::minus{});
+
+        py::array_t<float> dxdydt({py::ssize_t_cast(3), this->size()});
+        auto dx = std::span(dxdydt.mutable_data(0, 0), this->size());
+        auto dy = std::span(dxdydt.mutable_data(1, 0), this->size());
+        auto dt = std::span(dxdydt.mutable_data(2, 0), this->size());
+
+        // dt = vDiff / robot_width
+        std::transform(
+            vDiff.begin(), vDiff.end(), dt.begin(), [s = 1.f / (mRadius * 2.f)](float vD) { return vD * s; });
+
+        for (std::size_t idx = 0; idx < this->size(); ++idx)
+        {
+            if (std::abs(vDiff[idx]) > 1e-3f)
+            {
+                const float R = mRadius * (vR[idx] + vL[idx]) / (vDiff[idx] + std::numeric_limits<float>::epsilon());
+                dx[idx] = R * (std::sin(dt[idx] + theta[idx]) - std::sin(theta[idx]));
+                dy[idx] = -R * (std::cos(dt[idx] + theta[idx]) - std::cos(theta[idx]));
+            }
+            else
+            {
+                dx[idx] = vL[idx] * std::cos(theta[idx]);
+                dy[idx] = vL[idx] * std::sin(theta[idx]);
+            }
+        }
+
+        return dxdydt;
+    }
+
+    [[nodiscard]] auto view_ch(ChannelName index) noexcept -> std::span<float>
+    {
+        return std::span(mRobots.mutable_data(static_cast<int>(index), 0), this->size());
+    }
+
+    [[nodiscard]] auto view_ch(ChannelName index) const noexcept -> std::span<const float>
+    {
+        return std::span(mRobots.data(static_cast<int>(index), 0), this->size());
+    }
+};
+
 PYBIND11_MODULE(_planner, m)
 {
     py::class_<Planner>(m, "Planner")
         .def(py::init<double, double, double>(), py::arg("agent_radius"), py::arg("dt"), py::arg("max_velocity"))
         .def("__call__", &Planner::operator());
+
+    py::class_<Robots>(m, "Robots")
+        .def(py::init<int64_t, double, double, double>(), py::arg("n_robots"), py::arg("radius"), py::arg("dt"),
+            py::arg("accel_limit"))
+        .def("__len__", &Robots::size)
+        .def("reset", &Robots::reset)
+        .def("step", &Robots::step)
+        .def("forecast", &Robots::forecast)
+        .def_readwrite("state", &Robots::mRobots)
+        .def_readwrite("dt", &Robots::mDt)
+        .def_readwrite("radius", &Robots::mRadius)
+        .def_property_readonly("width", [](const Robots& self) { return self.mRadius * 2; })
+        .def_property(
+            "x", [](const Robots& self) { return self.getArray(ChannelName::x); },
+            [](Robots& self, py::array_t<float> x) { self.setArray(ChannelName::x, x); })
+        .def_property(
+            "y", [](const Robots& self) { return self.getArray(ChannelName::y); },
+            [](Robots& self, py::array_t<float> x) { self.setArray(ChannelName::y, x); })
+        .def_property(
+            "theta", [](const Robots& self) { return self.getArray(ChannelName::t); },
+            [](Robots& self, py::array_t<float> x) { self.setArray(ChannelName::t, x); })
+        .def_property(
+            "vL", [](const Robots& self) { return self.getArray(ChannelName::vL); },
+            [](Robots& self, py::array_t<float> x) { self.setArray(ChannelName::vL, x); })
+        .def_property(
+            "vR", [](const Robots& self) { return self.getArray(ChannelName::vR); },
+            [](Robots& self, py::array_t<float> x) { self.setArray(ChannelName::vR, x); });
 
     m.def("inplace_move_targets", &inplaceMoveTargets, py::arg("targets"), py::arg("dt"), py::arg("limits"),
         py::arg("n_steps"));

@@ -62,7 +62,8 @@ Since this uses the gymnasium, you can spin an environment up same as any other 
 Installation
 ------------
 
-Either you can clone and pip install the source, or you can install via pypi. If installing from source seems to stall for no apparent reason, enable 
+Either you can clone and pip install the source, or you can install via pypi.
+If installing from source seems to stall for no apparent reason, try --no-build-isolation.
 
 .. code:: bash
 
