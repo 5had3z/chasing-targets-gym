@@ -358,7 +358,7 @@ public:
 
     void reset() noexcept
     {
-        std::ranges::fill(mRobots.mutable_data(0, 0), mRobots.mutable_data(7, this->size() - 1), 0.f);
+        std::ranges::fill(mRobots.mutable_data(0, 0), mRobots.mutable_data(7, this->size() - 1) + 1, 0.f);
     }
 
     [[nodiscard]] auto size() const noexcept -> py::ssize_t

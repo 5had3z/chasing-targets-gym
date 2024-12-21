@@ -19,6 +19,7 @@ def default_env():
         max_velocity=_DEFAULT_MAX_VEL,
         target_velocity_std=0.5,
         max_episode_steps=30,
+        enforce_spaces=True,
     )
     return env
 

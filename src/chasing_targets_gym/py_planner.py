@@ -22,7 +22,7 @@ class Planner:
 
     plan_ahead_steps = 10
     forward_weight = 12
-    obstacle_weight = 6666
+    obstacle_weight = 10000
     max_acceleration = 0.4
 
     def __init__(

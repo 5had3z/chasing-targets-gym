@@ -67,7 +67,9 @@ dimensions, default value is (-4., -3., 4., 3.)
         reset_when_target_reached: bool = False,
         recording_path: Path | None = None,
         sandbox_dimensions: tuple[float, float, float, float] | None = None,
+        enforce_spaces: bool = False,
     ):
+        self.enforce_spaces = enforce_spaces
         self.robots = Robots(n_robots, robot_radius, dt, max_acceleration)
         self.robots_history = None if render_mode is None else deque(maxlen=10)
         self.targets = np.empty((4, n_targets), dtype=self._f_dtype)
@@ -223,7 +225,10 @@ dimensions, default value is (-4., -3., 4., 3.)
             "future_target": targets,
             "robot_target_idx": self.target_idxs,
         }
-        # assert self.observation_space.contains(obs)
+        if self.enforce_spaces:
+            for k, v in obs.items():
+                if not self.observation_space[k].contains(v):
+                    raise RuntimeError(f"Invalid observation {k}: {v}")
         return obs
 
     def reset(
@@ -275,18 +280,20 @@ dimensions, default value is (-4., -3., 4., 3.)
         return self._get_obs(), self._info
 
     def step(self, action: dict[str, np.ndarray]):
-        assert self.action_space.contains(action)
+        if self.enforce_spaces:
+            assert self.action_space.contains(action)
+
         inplace_move_targets(self.targets, self.dt, self.field_limits, 1)
         if self.robots_history is not None:
             self.robots_history.append(self.robots.state[:2])
 
         self.robots.step(action)
         # Robots can scrape against the border
-        np.clip(
-            self.robots.x, self.field_limits[0], self.field_limits[2], self.robots.x
+        self.robots.x = np.clip(
+            self.robots.x, self.field_limits[0], self.field_limits[2]
         )
-        np.clip(
-            self.robots.y, self.field_limits[1], self.field_limits[3], self.robots.y
+        self.robots.y = np.clip(
+            self.robots.y, self.field_limits[1], self.field_limits[3]
         )
 
         robot_collisions: np.ndarray[bool] = (

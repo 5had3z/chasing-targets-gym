@@ -59,6 +59,8 @@ app = typer.Typer()
 def main(
     profile: Annotated[bool, typer.Option(help="Enable Scalene Profiling")] = False,
     max_step: Annotated[int, typer.Option(help="Max step before termination")] = 500,
+    n_robots: Annotated[int, typer.Option(help="Number of Robots")] = 15,
+    n_targets: Annotated[int, typer.Option(help="Number of Targets")] = 4,
     record: Annotated[Optional[str], typer.Option(help="Filename to record")] = None,
     use_pure_pursuit: Annotated[bool, typer.Option(help="Greedy algorithm")] = False,
     seed: Annotated[int, typer.Option(help="Seed for simulation")] = 0,
@@ -69,8 +71,8 @@ def main(
     """
     env = RobotChasingTargetEnv(
         render_mode="human" if not profile else None,
-        n_robots=15,
-        n_targets=4,
+        n_robots=n_robots,
+        n_targets=n_targets,
         robot_radius=ROBOT_RADIUS,
         max_velocity=MAX_VEL,
         target_velocity_std=MAX_VEL,
@@ -92,8 +94,7 @@ def main(
 
         scalene_profiler.start()
 
-    for _ in range(10 if profile else 1):
-        run_sim(env, planner, max_step, seed)
+    run_sim(env, planner, max_step, seed)
 
     if profile:
         scalene_profiler.stop()
